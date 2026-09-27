@@ -9,7 +9,7 @@
 //
 // Bump CACHE_NAME whenever this file's caching behavior changes; the
 // activate handler clears any cache that doesn't match the current name.
-const CACHE_NAME = "nearpool-shell-v2";
+const CACHE_NAME = "nearpool-shell-v3";
 const SHELL_URL = "/";
 
 self.addEventListener("install", (event) => {
@@ -49,8 +49,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(SHELL_URL, copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(SHELL_URL, copy));
+          }
           return response;
         })
         .catch(() => caches.match(SHELL_URL).then((cached) => cached || caches.match(request))),
@@ -58,21 +60,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Vite's hashed build output (/assets/*.js, *.css) is immutable by
-  // filename — safe to serve from cache first, refilling in the
-  // background so the next navigation picks up any change.
-  if (/\.(?:js|css|woff2?|png|jpg|jpeg|svg|ico)$/.test(url.pathname)) {
+  // Static files: network-first as well, cache only as an offline fallback.
+  // Serving cached JS first could keep a browser on an old build after a
+  // redeploy until a manual refresh.
+  if (/\.(?:js|css|woff2?|png|jpg|jpeg|svg|ico|webmanifest)$/.test(url.pathname)) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        const network = fetch(request)
-          .then((response) => {
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-            return response;
-          })
-          .catch(() => cached);
-        return cached || network;
-      }),
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
     );
   }
 });

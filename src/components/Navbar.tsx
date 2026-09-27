@@ -133,7 +133,9 @@ export function Navbar() {
       <header className="sticky top-0 z-40 border-b border-linesoft bg-canvas/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link to="/" aria-label="nearpool home" className="flex shrink-0 items-center gap-2 text-ink">
-            <Logo size={30} />
+            <span id="nearpool-brand" className="inline-flex">
+              <Logo size={30} />
+            </span>
             <span className="font-display text-lg font-semibold tracking-tight">nearpool</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="Main">

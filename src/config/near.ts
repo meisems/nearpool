@@ -188,4 +188,7 @@ export const COMMON_PAIRS: Array<[string, string]> = [
   [WRAP_NEAR_CONTRACT_ID, "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near"],
 ];
 
+/** Optional: enables WalletConnect (QR pairing with mobile wallets). Get one at cloud.reown.com. */
+export const WALLETCONNECT_PROJECT_ID: string = (env.VITE_WALLETCONNECT_PROJECT_ID || "").trim();
+
 export const PROJECT_NAME = "nearpool";
