@@ -110,6 +110,28 @@ export const NEAR_GAS_RESERVE = 50_000_000_000_000_000_000_000n; // 0.05 NEAR
 /** Storage staking cost on NEAR: 10^19 yoctoNEAR per byte. */
 export const STORAGE_PRICE_PER_BYTE = 10n ** 19n;
 
+/* ------------------------------------------------------------ platform fee */
+
+/**
+ * Interface fee: a plain NEAR transfer appended as the last transaction of
+ * every injection and swap batch. It's charged by this front end, not by a
+ * contract, so it can't be forced on someone calling Ref directly.
+ * Set VITE_FEE_NEAR=0 to disable.
+ */
+export const FEE_RECEIVER_ID: string = (env.VITE_FEE_RECEIVER || "ambereui.tg").trim().toLowerCase();
+
+function parseNearAmount(value: string): bigint {
+  const match = /^(\d+)(?:\.(\d{0,24}))?$/.exec(value.trim());
+  if (!match) throw new Error(`invalid VITE_FEE_NEAR: ${value}`);
+  return BigInt(match[1]) * YOCTO_PER_NEAR + BigInt((match[2] ?? "").padEnd(24, "0") || "0");
+}
+
+/** Fee per injection or swap, in yoctoNEAR (default 0.1 NEAR). */
+export const FEE_AMOUNT: bigint = parseNearAmount(env.VITE_FEE_NEAR ?? "0.1");
+
+/** False when the fee is configured to zero or no receiver is set. */
+export const FEE_ENABLED = FEE_AMOUNT > 0n && FEE_RECEIVER_ID.length > 0;
+
 /* ------------------------------------------------------------ slippage */
 
 export const SLIPPAGE_DEFAULT_BPS = 50;

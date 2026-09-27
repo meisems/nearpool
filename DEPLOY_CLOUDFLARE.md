@@ -141,6 +141,8 @@ the build happens: your shell for local deploys, or **Settings → Variables**
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
+| `VITE_FEE_RECEIVER` | `ambereui.tg` — receives the interface fee |
+| `VITE_FEE_NEAR` | `0.1` — fee per injection or swap; `0` disables it |
 
 The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
 production, put a dedicated RPC (FastNEAR, Lava, Ankr, etc.) in

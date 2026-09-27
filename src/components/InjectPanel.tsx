@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useAccountSnapshot, useFtMetadata, usePoolShares } from "../hooks/useRefData";
+import { useAccountSnapshot, useFtMetadata, usePlatformFee, usePoolShares } from "../hooks/useRefData";
 import { useNearInjection, type InjectionPhase } from "../hooks/useNearInjection";
 import {
   explorerTxUrl,
@@ -31,10 +31,10 @@ const STEPS: Array<{ phase: InjectionPhase; label: string; step: "storage" | "wr
 ];
 const ORDER: InjectionPhase[] = ["idle", "checking-storage", "wrapping", "depositing", "injecting", "success"];
 
-function spendable(token: TokenAccountState | undefined, native: bigint, useRef: boolean, wrapNative: boolean): bigint {
+function spendable(token: TokenAccountState | undefined, native: bigint, useRef: boolean, wrapNative: boolean, fee: bigint): bigint {
   if (!token) return 0n;
   let total = token.walletBalance + (useRef ? token.refDeposit : 0n);
-  if (token.tokenId === WRAP_NEAR_CONTRACT_ID && wrapNative) total += maxBig(native - NEAR_GAS_RESERVE - STORAGE_HEADROOM, 0n);
+  if (token.tokenId === WRAP_NEAR_CONTRACT_ID && wrapNative) total += maxBig(native - NEAR_GAS_RESERVE - STORAGE_HEADROOM - fee, 0n);
   return total;
 }
 
@@ -137,6 +137,8 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const metaReady = !!metaA.data && !!metaB.data;
 
   const snapshot = useAccountSnapshot(pool.tokenIds);
+  const feeQ = usePlatformFee();
+  const fee = feeQ.data ?? null;
   const shares = usePoolShares(pool.id);
   const native = snapshot.data?.native.available;
   const states = pool.tokenIds.map((id) => snapshot.data?.tokens[id]);
@@ -176,7 +178,7 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
       return next;
     });
   };
-  const spend = states.map((s) => spendable(s, native ?? 0n, useRefDeposits, wrapNative));
+  const spend = states.map((s) => spendable(s, native ?? 0n, useRefDeposits, wrapNative, fee?.amount ?? 0n));
   const setMax = (i: 0 | 1) => {
     const other = i === 0 ? 1 : 0;
     let max = spend[i];
@@ -193,13 +195,13 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
     if (!snapshot.data || amounts[0] <= 0n || amounts[1] <= 0n || shares.data === undefined) return { plan: null, error: null };
     try {
       return {
-        plan: planInjection(snapshot.data, { pool, amounts, slippageBps: slipBps, useRefDeposits, payWithNative: wrapNative, existingShares: shares.data }),
+        plan: planInjection(snapshot.data, { pool, amounts, slippageBps: slipBps, useRefDeposits, payWithNative: wrapNative, existingShares: shares.data, fee }),
         error: null,
       };
     } catch (e) {
       return { plan: null, error: e instanceof PlanError ? e.message : e instanceof Error ? e.message : String(e) };
     }
-  }, [snapshot.data, pool, amounts, slipBps, useRefDeposits, wrapNative, shares.data]);
+  }, [snapshot.data, pool, amounts, slipBps, useRefDeposits, wrapNative, shares.data, fee]);
 
   const inj = useNearInjection();
   useEffect(() => {
@@ -214,7 +216,7 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
     if (inj.busy) return { label: inj.awaitingWallet ? "Confirm in wallet" : "Working…", disabled: true };
     if (!metaReady) return { label: "Loading…", disabled: true };
     if (amounts[0] <= 0n || amounts[1] <= 0n) return { label: "Enter an amount", disabled: true };
-    if (!snapshot.data || shares.data === undefined) return { label: "Checking balances…", disabled: true };
+    if (!snapshot.data || shares.data === undefined || feeQ.isLoading) return { label: "Checking balances…", disabled: true };
     if (short !== undefined) return { label: `Not enough ${symbols[short]}`, disabled: true };
     if (preview.error) return { label: preview.error, disabled: true };
     if (!estimate || estimate.shares <= 0n) return { label: "Amount too small", disabled: true };
@@ -341,6 +343,13 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+      )}
+
+      {fee && (
+        <div className="mt-1 flex items-center justify-between text-sm">
+          <span className="text-muted">Fee</span>
+          <span className="text-ink tabular">{fmtAmount(fee.amount, NEAR_DECIMALS)} NEAR</span>
         </div>
       )}
 

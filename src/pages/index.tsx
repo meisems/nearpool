@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { explorerAccountUrl, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
+import { explorerAccountUrl, FEE_AMOUNT, FEE_ENABLED, FEE_RECEIVER_ID, NEAR_DECIMALS, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
 import { useNearWallet } from "../context/NearWalletContext";
 import { useFtMetadata, usePool, useTokenPools } from "../hooks/useRefData";
 import { useTokenMarket } from "../hooks/useTokenMarket";
@@ -304,7 +304,7 @@ const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode
     sections: [
       ["How it works", <ol key="h" className="list-decimal space-y-1 pl-5"><li>Paste a token address.</li><li>Pick its Ref pool and enter an amount — the other side is sized from reserves.</li><li>Approve once. Storage, wrapping, deposits and <code>add_liquidity</code> run in order.</li></ol>],
       ["Contracts", <ul key="c" className="space-y-1"><li><code>{REF_FINANCE_CONTRACT_ID}</code> — Ref Finance</li><li><code>{WRAP_NEAR_CONTRACT_ID}</code> — wrapped NEAR</li></ul>],
-      ["Fees & deposits", <ul key="f" className="list-disc space-y-1 pl-5"><li>No nearpool fee.</li><li>Storage deposits (≈0.00125–0.1 NEAR) are refundable or stay withdrawable.</li><li>First position in a pool attaches 0.01 NEAR; unused part is refunded.</li></ul>],
+      ["Fees & deposits", <ul key="f" className="list-disc space-y-1 pl-5">{FEE_ENABLED && <li>nearpool fee: {fmtAmount(FEE_AMOUNT, NEAR_DECIMALS)} NEAR per injection or swap, sent to <code>{FEE_RECEIVER_ID}</code> as the last transaction.</li>}<li>Storage deposits (≈0.00125–0.1 NEAR) are refundable or stay withdrawable.</li><li>First position in a pool attaches 0.01 NEAR; unused part is refunded.</li></ul>],
       ["Tracking", <p key="t">Tracked tokens are saved in this browser only. Change is measured from the price when you started tracking.</p>],
       ["Your LP", <p key="l">Shares stay in your Ref account. Withdraw any time on <a className="text-accent hover:underline" href="https://app.ref.finance" target="_blank" rel="noreferrer">app.ref.finance</a>.</p>],
     ],
@@ -313,6 +313,7 @@ const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode
     title: "Terms",
     sections: [
       ["Software only", <p key="s">nearpool is an interface to Ref Finance and token contracts on NEAR. It never holds your funds and can't reverse transactions.</p>],
+      ["Fees", <p key="fee">{FEE_ENABLED ? `A ${fmtAmount(FEE_AMOUNT, NEAR_DECIMALS)} NEAR interface fee is added to each injection and swap and shown before you sign. Ref Finance pool fees apply separately.` : "nearpool charges no interface fee. Ref Finance pool fees apply."}</p>],
       ["Your responsibility", <p key="r">You choose the tokens, amounts and transactions you sign. Liquidity carries impermanent-loss and smart-contract risk. Not financial advice.</p>],
       ["Availability", <p key="a">Prices, balances and third-party services (RPC, wallets, explorers) can change or fail without notice.</p>],
     ],
