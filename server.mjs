@@ -301,9 +301,12 @@ function safeDistPath(urlPath) {
 async function handleStatic(req, res, url) {
   let path = safeDistPath(url.pathname);
   if (!path) return sendJson(res, 400, { error: "invalid path" });
-  // BrowserRouter owns extensionless client routes. Serve the SPA shell for
-  // direct navigation and refreshes such as /inject or /swap.
-  if (!existsSync(path) && !extname(url.pathname)) path = indexPath;
+  // BrowserRouter owns client routes. Serve the SPA shell for direct
+  // navigation and refreshes — including token routes such as
+  // /t/usdt.tether-token.near, whose dots look like a file extension. Real
+  // missing assets (anything under /assets/, or a non-HTML request) still 404.
+  const wantsHtml = String(req.headers.accept || "").includes("text/html");
+  if (!existsSync(path) && !url.pathname.startsWith("/assets/") && (wantsHtml || !extname(url.pathname))) path = indexPath;
   try {
     const body = await readFile(path);
     // Only Vite's content-hashed build output (dist/assets/*) is safe to

@@ -11,7 +11,7 @@
  * live / success / primary-action states so it stays meaningful.
  *
  * Every surface, line and glow is derived from the same canvas hue per
- * theme, so cards, glass and ambient light blend into the page instead of
+ * theme, so cards, inputs and overlays blend into the page instead of
  * sitting on top of it.
  */
 
@@ -47,9 +47,6 @@
   --shadow-soft: 0 10px 28px -14px rgba(40, 36, 20, 0.18);
   --shadow-card: 0 1px 2px rgba(40, 36, 20, 0.05), 0 20px 48px -24px rgba(40, 36, 20, 0.16);
   --shadow-pop: 0 18px 60px -18px rgba(40, 36, 20, 0.26);
-  --grid-dot: #d9d6c9;
-  --glow-a: rgba(0, 236, 151, 0.1);
-  --glow-b: rgba(151, 151, 255, 0.1);
 }
 
 .dark {
@@ -82,9 +79,6 @@
   --shadow-soft: 0 12px 36px -12px rgba(0, 0, 0, 0.7);
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 64px -32px rgba(0, 0, 0, 0.9);
   --shadow-pop: 0 24px 64px -16px rgba(0, 0, 0, 0.95);
-  --grid-dot: #1a1a1a;
-  --glow-a: rgba(0, 236, 151, 0.08);
-  --glow-b: rgba(151, 151, 255, 0.07);
 }
 
 @theme inline {
@@ -141,7 +135,10 @@ button { -webkit-tap-highlight-color: transparent; }
 button:disabled { cursor: not-allowed; }
 input::placeholder { opacity: 0.72; }
 
-input:focus-visible, button:focus-visible, a:focus-visible {
+/* Text inputs sit inside containers that draw their own focus ring. */
+input:not([type="checkbox"]):focus-visible { outline: none; }
+
+input[type="checkbox"]:focus-visible, button:focus-visible, a:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 2px;
   border-radius: 6px;
@@ -168,32 +165,11 @@ input:focus-visible, button:focus-visible, a:focus-visible {
   ::view-transition-new(root) { animation: none; }
 }
 
-input[type="range"].cut-slider {
-  -webkit-appearance: none; appearance: none; height: 3px; border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--line) var(--fill, 50%), var(--line) 100%);
-}
-input[type="range"].cut-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 999px;
-  background: var(--card); border: 1.5px solid var(--accent); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); cursor: pointer; transition: transform 0.15s ease;
-}
-input[type="range"].cut-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
-input[type="range"].cut-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--accent); cursor: pointer; }
-
 @keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vip) 45%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } }
 .vip-pulse { animation: pulse-dot 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-@keyframes drift-a { 0% { transform: translate3d(-4%, -2%, 0) scale(1); } 100% { transform: translate3d(4%, 3%, 0) scale(1.08); } }
-@keyframes drift-b { 0% { transform: translate3d(3%, 2%, 0) scale(1.05); } 100% { transform: translate3d(-3%, -3%, 0) scale(1); } }
-.drift-a { animation: drift-a 26s ease-in-out infinite alternate; }
-.drift-b { animation: drift-b 32s ease-in-out infinite alternate; }
-@keyframes blink-caret { 0%, 45% { opacity: 1; } 50%, 95% { opacity: 0; } 100% { opacity: 1; } }
-.caret-blink { animation: blink-caret 1.1s steps(1) infinite; }
-@keyframes pond-ripple { 0% { transform: scale(0.55); opacity: 0.55; } 80% { opacity: 0.12; } 100% { transform: scale(1.5); opacity: 0; } }
-.pond-ring { animation: pond-ripple 4.8s cubic-bezier(0.2, 0.6, 0.35, 1) infinite; }
 .tabular { font-variant-numeric: tabular-nums; }
-.glass { background: color-mix(in srgb, var(--card) 78%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-.frost { background: color-mix(in srgb, var(--card) 68%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 
-/* OKX-like product details: crisp hairline borders, compact controls, clear disabled states. */
+/* Crisp hairline borders, compact controls, clear disabled states. */
 button:not(:disabled), a { transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease; }
 button:not(:disabled):active { transform: translateY(1px); }
 

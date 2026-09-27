@@ -1,8 +1,9 @@
 # nearpool
 
-Non-custodial liquidity-pool injector for [Ref Finance](https://app.ref.finance) on NEAR mainnet.
-Pick a common pair or any Ref pool id, type one side, and nearpool sizes the counter asset from
-live reserves, then batches every step into a single wallet approval:
+Non-custodial liquidity injector for [Ref Finance](https://app.ref.finance) on NEAR mainnet.
+Paste any token's contract address (or a nearblocks / Ref link, or a pool ID), pick its pool,
+type one side, and nearpool sizes the other side from live reserves, then batches every step
+into a single wallet approval:
 
 1. **Checking storage** — NEP-145 registrations for you and Ref on both tokens, Ref account
    storage (register / top up) and `register_tokens` for non-whitelisted tokens.
@@ -13,7 +14,10 @@ live reserves, then batches every step into a single wallet approval:
 4. **Injecting LP** — `add_liquidity` on `v2.ref-finance.near` (100 TGas) with slippage-guarded
    `min_amounts`.
 
-A second page offers single-hop Ref instant swaps for sourcing the counter asset.
+Tokens can be tracked (saved per browser): price, change since tracking, pool depth and your
+position. A swap page sources the counter asset.
+
+Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`, `/swap?out=<token>`.
 
 ## Stack
 
@@ -33,6 +37,9 @@ A second page offers single-hop Ref instant swaps for sourcing the counter asset
 | `src/utils/zapMath.ts` | Proportional quoting, share estimation, slippage, swap output — mirrors Ref's integer math |
 | `src/hooks/useNearInjection.ts` | Pipeline state machine; observes progress on-chain and verifies every receipt |
 | `src/hooks/useRefSwap.ts` | Instant swap execution |
+| `src/hooks/useTokenMarket.ts`, `useWatchlist.ts` | Price / depth / position per token; tracked-token store |
+| `src/lib/tokenInput.ts` | Parses pasted addresses, pool IDs and nearblocks / Ref links |
+| `src/components/InjectPanel.tsx`, `pages/index.tsx` | Add-liquidity panel; home, token, tracked, swap and docs pages |
 | `server.mjs` | Node hosting + shared activity feed (each post re-verified against NEAR RPC) |
 | `worker/`, `functions/` | Same activity feed for Cloudflare Workers / Pages, stored in D1 (`migrations/`) |
 

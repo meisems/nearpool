@@ -11,7 +11,7 @@ import { IconClose, IconLoader, IconSearch } from "./icons";
 function TokenRow({ tokenId, subtitle, onSelect }: { tokenId: string; subtitle?: string; onSelect: (tokenId: string) => void }) {
   const meta = useFtMetadata(tokenId);
   const symbol = displaySymbol(tokenId, meta.data);
-  const name = tokenId === WRAP_NEAR_CONTRACT_ID ? "NEAR (wrapped on deposit)" : meta.data?.name ?? (meta.isLoading ? "reading…" : "unknown token");
+  const name = tokenId === WRAP_NEAR_CONTRACT_ID ? "NEAR" : meta.data?.name ?? (meta.isLoading ? "…" : "Unknown");
   return (
     <button
       onClick={() => onSelect(tokenId)}
@@ -35,14 +35,14 @@ function PastedToken({ tokenId, onSelect }: { tokenId: string; onSelect: (tokenI
   if (meta.isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 px-3 py-5 font-mono text-[11px] text-faint">
-        <IconLoader size={13} className="animate-spin" /> reading ft_metadata…
+        <IconLoader size={13} className="animate-spin" /> Reading token…
       </div>
     );
   }
   if (meta.isError || !meta.data) {
-    return <div className="px-3 py-6 text-center font-mono text-[11px] text-faint">{tokenId} doesn't expose NEP-141 metadata</div>;
+    return <div className="px-3 py-6 text-center font-mono text-[11px] text-faint">Not a token</div>;
   }
-  return <TokenRow tokenId={tokenId} subtitle="live read" onSelect={onSelect} />;
+  return <TokenRow tokenId={tokenId} subtitle="Pasted" onSelect={onSelect} />;
 }
 
 /** Token picker: common NEAR tokens, or paste any NEP-141 contract account ID. */
@@ -94,23 +94,23 @@ export function TokenSelectModal({
             exit={{ opacity: 0, y: 8, scale: 0.98 }}
             transition={{ type: "spring", damping: 20, stiffness: 260 }}
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[80vh] w-full max-w-[420px] flex-col overflow-hidden rounded-3xl border border-line bg-card shadow-(--shadow-pop)"
+            className="flex max-h-[80vh] w-full max-w-[420px] flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-(--shadow-pop)"
           >
             <div className="flex items-center justify-between border-b border-linesoft px-5 py-4">
-              <div className="font-display text-[16px] font-semibold text-ink">select a token</div>
+              <div className="font-display text-base font-semibold text-ink">Select token</div>
               <button onClick={onClose} aria-label="close" className="text-faint transition-colors hover:text-ink">
                 <IconClose size={18} />
               </button>
             </div>
 
             <div className="px-4 pt-3">
-              <div className="flex items-center gap-2 rounded-full border border-line bg-card2/60 px-3.5 py-2.5 transition-colors focus-within:border-accent/40">
+              <div className="flex items-center gap-2 rounded-xl border border-line bg-card2 px-3.5 py-2.5 transition-colors focus-within:border-accent/40">
                 <IconSearch size={14} className="shrink-0 text-faint" />
                 <input
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="search symbol, or paste token.near"
+                  placeholder="Search or paste address"
                   spellCheck={false}
                   autoCapitalize="off"
                   className="w-full bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-faint"
@@ -119,8 +119,8 @@ export function TokenSelectModal({
             </div>
 
             <div className="mt-2 flex-1 overflow-y-auto px-2 pb-3">
-              <div className="px-3 pt-2 pb-1 font-mono text-[9.5px] tracking-[0.14em] text-faint uppercase">
-                {q ? "search results" : `common tokens · ${filtered.length}`}
+              <div className="px-3 pt-2 pb-1 text-xs text-faint">
+                {q ? "Results" : "Popular"}
               </div>
               {filtered.map((t) => (
                 <TokenRow key={t.id} tokenId={t.id} onSelect={handleSelect} />
@@ -128,7 +128,7 @@ export function TokenSelectModal({
               {pasted && <PastedToken tokenId={pasted} onSelect={handleSelect} />}
               {!filtered.length && !pasted && (
                 <div className="px-3 py-6 text-center font-mono text-[11px] text-faint">
-                  no match — paste a full NEP-141 contract ID like <span className="text-muted">token.v2.ref-finance.near</span>
+                  No match — paste the full token address
                 </div>
               )}
             </div>

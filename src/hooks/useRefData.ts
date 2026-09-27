@@ -3,6 +3,7 @@ import { useNearWallet } from "../context/NearWalletContext";
 import { getNativeBalance } from "../lib/near";
 import {
   findPoolsForPair,
+  findPoolsForToken,
   getFtMetadata,
   getPool,
   getPoolShares,
@@ -41,6 +42,17 @@ export function usePairPools(tokenA: string | null, tokenB: string | null) {
     queryKey: [REF_QUERY_ROOT, "pair-pools", tokenA, tokenB],
     queryFn: () => findPoolsForPair(tokenA as string, tokenB as string),
     enabled: !!tokenA && !!tokenB && tokenA !== tokenB,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+}
+
+/** Every Ref simple pool holding a token, NEAR pairs first (resolved on-chain). */
+export function useTokenPools(tokenId: string | null) {
+  return useQuery<RefPool[]>({
+    queryKey: [REF_QUERY_ROOT, "token-pools", tokenId],
+    queryFn: () => findPoolsForToken(tokenId as string),
+    enabled: !!tokenId,
     staleTime: 5 * 60_000,
     retry: 1,
   });
