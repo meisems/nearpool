@@ -171,6 +171,40 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Signed in or out in another browser tab: wallet-selector and its modal are
+  // page-wide singletons that read the session only at startup, so this tab
+  // reloads itself to pick up the change (right away if it's in the
+  // background, where nobody sees it).
+  useEffect(() => {
+    if (!selector) return;
+    const KEY = "near-wallet-selector:selectedWalletId";
+    const stored = (): string | null => {
+      try {
+        return JSON.parse(localStorage.getItem(KEY) ?? "null") as string | null;
+      } catch {
+        return null;
+      }
+    };
+    let pending = false;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== KEY) return;
+      if (stored() === selector.store.getState().selectedWalletId) return;
+      if (document.visibilityState === "hidden") window.location.reload();
+      else pending = true;
+    };
+    const onVisible = () => {
+      if (pending && document.visibilityState === "visible") window.location.reload();
+    };
+    window.addEventListener("storage", onStorage);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [selector]);
+
   // Resolve the wallet interface whenever the selected wallet changes.
   useEffect(() => {
     if (!selector || !selectedWalletId || accounts.length === 0) {

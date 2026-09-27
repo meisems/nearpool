@@ -9,8 +9,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "esbuild tests/refFinance.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/nearpool/refFinance.test.cjs --define:import.meta.env={} --log-level=error && node node_modules/.cache/nearpool/refFinance.test.cjs",
     "cf:dev": "wrangler dev",
-    "cf:deploy": "wrangler deploy",
-    "cf:pages:deploy": "npm run build && wrangler pages deploy dist --project-name nearpool"
+    "cf:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

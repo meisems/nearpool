@@ -152,10 +152,14 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  // Reset the form only when the pool or token actually changes, not when a
+  // refetch (tab focus, polling) hands back a fresh pool object.
+  const poolKey = `${pool.id}:${pool.tokenIds.join(",")}:${tokenId}`;
   useEffect(() => {
     setInputs(["", ""]);
     setLastEdited(pool.tokenIds.indexOf(tokenId) as 0 | 1);
-  }, [pool.id, pool.tokenIds, tokenId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poolKey]);
 
   const reserves = pool.reserves;
   const empty = pool.sharesTotalSupply === 0n;

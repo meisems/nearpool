@@ -1,6 +1,4 @@
-# Cloudflare Workers deployment (Workers + static assets).
-# See DEPLOY_CLOUDFLARE.md. For Cloudflare Pages, this file is ignored
-# (no pages_build_output_dir); Pages uses functions/ and dashboard bindings.
+# Cloudflare Workers deployment (Workers + static assets). See DEPLOY_CLOUDFLARE.md.
 name = "nearpool"
 main = "worker/index.ts"
 compatibility_date = "2026-09-01"
