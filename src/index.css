@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * OKX-inspired design tokens.
+ *
+ * Dark is the primary, product-defining palette: true-black canvas,
+ * near-black elevated surfaces, hairline borders, stark white ink for
+ * primary type/buttons, muted greys for secondary content, and a single
+ * electric neon accent reserved for active/success/live states so it
+ * stays meaningful instead of decorative.
+ *
+ * The light palette is kept for the existing theme toggle but pulled into
+ * the same monochrome-plus-neon language so switching themes never feels
+ * like a different product.
+ */
+
+:root {
+  --canvas: #fafafa;
+  --card: #ffffff;
+  --card-2: #f2f2f2;
+  --line: #e0e0e0;
+  --line-soft: #ececec;
+  --ink: #000000;
+  --muted: #55565b;
+  --faint: #8e8e93;
+  --accent: #00c880;
+  --accent-strong: #00a86b;
+  --accent-soft: rgba(0, 200, 128, 0.1);
+  --coin: #b98600;
+  --coin-strong: #916b00;
+  --coin-soft: #fff3cf;
+  --vip: #00c880;
+  --amber: #b9770e;
+  --amber-soft: #fff1d2;
+  --danger: #d8253f;
+  --shadow-soft: 0 10px 28px -14px rgba(0, 0, 0, 0.16);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 20px 48px -24px rgba(0, 0, 0, 0.12);
+  --shadow-pop: 0 18px 60px -18px rgba(0, 0, 0, 0.22);
+  --grid-dot: #e4e4e4;
+  --glow-a: rgba(0, 200, 128, 0.07);
+  --glow-b: rgba(0, 200, 128, 0.04);
+}
+
+.dark {
+  /* OKX-style true black + elevated near-black surfaces */
+  --canvas: #000000;
+  --card: #111111;
+  --card-2: #1a1a1a;
+  --line: #262626;
+  --line-soft: #1c1c1c;
+
+  /* Stark monochrome contrast */
+  --ink: #ffffff;
+  --muted: #8e8e93;
+  --faint: #707070;
+
+  /* Electric neon — reserved for active / success / live states */
+  --accent: #00ffa3;
+  --accent-strong: #6dffc4;
+  --accent-soft: rgba(0, 255, 163, 0.14);
+
+  --coin: #f0b90b;
+  --coin-strong: #ffd34f;
+  --coin-soft: rgba(240, 185, 11, 0.14);
+  --vip: #00ffa3;
+  --amber: #ffb21a;
+  --amber-soft: rgba(255, 178, 26, 0.14);
+  --danger: #ff3b5c;
+
+  --shadow-soft: 0 12px 36px -12px rgba(0, 0, 0, 0.7);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 64px -32px rgba(0, 0, 0, 0.9);
+  --shadow-pop: 0 24px 64px -16px rgba(0, 0, 0, 0.95);
+  --grid-dot: #161616;
+  --glow-a: rgba(0, 255, 163, 0.07);
+  --glow-b: rgba(0, 255, 163, 0.04);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-card2: var(--card-2);
+  --color-line: var(--line);
+  --color-linesoft: var(--line-soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accentstrong: var(--accent-strong);
+  --color-accentsoft: var(--accent-soft);
+  --color-coin: var(--coin);
+  --color-coinstrong: var(--coin-strong);
+  --color-coinsoft: var(--coin-soft);
+  --color-vip: var(--vip);
+  --color-amberish: var(--amber);
+  --color-ambersoft: var(--amber-soft);
+  --color-danger: var(--danger);
+  --font-display: "Space Grotesk", "Instrument Sans", sans-serif;
+  --font-body: "Instrument Sans", system-ui, sans-serif;
+  --font-mono: "Spline Sans Mono", ui-monospace, monospace;
+}
+
+html {
+  font-family: var(--font-body);
+  background: var(--canvas);
+  color: var(--ink);
+  transition: background-color 0.45s ease, color 0.45s ease;
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background: radial-gradient(circle at 12% 4%, var(--glow-a), transparent 28rem), radial-gradient(circle at 88% 18%, var(--glow-b), transparent 24rem), var(--canvas);
+  overflow-x: hidden;
+}
+
+::selection { background: var(--accent-soft); color: var(--ink); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+input, button { font-family: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; }
+input::placeholder { opacity: 0.72; }
+
+input:focus-visible, button:focus-visible, a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.45s; }
+
+input[type="range"].cut-slider {
+  -webkit-appearance: none; appearance: none; height: 3px; border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), var(--line) var(--fill, 50%), var(--line) 100%);
+}
+input[type="range"].cut-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 999px;
+  background: var(--card); border: 1.5px solid var(--accent); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); cursor: pointer; transition: transform 0.15s ease;
+}
+input[type="range"].cut-slider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type="range"].cut-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 999px; background: var(--card); border: 1.5px solid var(--accent); cursor: pointer; }
+
+@keyframes pulse-dot { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vip) 45%, transparent); } 70% { box-shadow: 0 0 0 6px transparent; } }
+.vip-pulse { animation: pulse-dot 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+@keyframes drift-a { 0% { transform: translate3d(-4%, -2%, 0) scale(1); } 100% { transform: translate3d(4%, 3%, 0) scale(1.08); } }
+@keyframes drift-b { 0% { transform: translate3d(3%, 2%, 0) scale(1.05); } 100% { transform: translate3d(-3%, -3%, 0) scale(1); } }
+.drift-a { animation: drift-a 26s ease-in-out infinite alternate; }
+.drift-b { animation: drift-b 32s ease-in-out infinite alternate; }
+@keyframes blink-caret { 0%, 45% { opacity: 1; } 50%, 95% { opacity: 0; } 100% { opacity: 1; } }
+.caret-blink { animation: blink-caret 1.1s steps(1) infinite; }
+@keyframes pond-ripple { 0% { transform: scale(0.55); opacity: 0.55; } 80% { opacity: 0.12; } 100% { transform: scale(1.5); opacity: 0; } }
+.pond-ring { animation: pond-ripple 4.8s cubic-bezier(0.2, 0.6, 0.35, 1) infinite; }
+.tabular { font-variant-numeric: tabular-nums; }
+.glass { background: color-mix(in srgb, var(--card) 78%, transparent); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+.frost { background: color-mix(in srgb, var(--card) 68%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+
+/* OKX-like product details: crisp hairline borders, compact controls, clear disabled states. */
+button:not(:disabled), a { transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease; }
+button:not(:disabled):active { transform: translateY(1px); }

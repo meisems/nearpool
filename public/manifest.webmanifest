@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "ponspool",
+  "short_name": "ponspool",
+  "description": "Instant LP injection on Robinhood Chain — seed your pool, burn or lock the LP. Non-custodial.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f0f12",
+  "theme_color": "#0f0f12",
+  "categories": ["finance"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/logo-mark-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/logo-mark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/logo-mark-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/logo-mark-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
