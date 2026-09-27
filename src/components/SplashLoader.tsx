@@ -110,7 +110,7 @@ export function SplashLoader({
             }
             transition={{ duration: 0.8, times: [0, 0.35, 0.7, 1], ease: "easeInOut" }}
           >
-            <Logo size={86} />
+            <Logo size={92} className="text-ink" />
           </motion.div>
         </motion.div>
 

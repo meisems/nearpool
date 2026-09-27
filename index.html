@@ -4,21 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="description" content="nearpool — instant LP injection into Ref Finance pools on NEAR. Storage, wrapping, deposits and add_liquidity in one approval. Non-custodial." />
     <title>nearpool · instant LP injection on NEAR</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <!-- Transparent SVG favicon that flips black/white with the browser theme; PNG/ICO fallbacks. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/logo-mark-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/logo-mark-512.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="nearpool" />
-    <meta property="og:image" content="/logo-mark-512.png" />
+    <meta property="og:image" content="/logo-mark-maskable-512.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -27,12 +27,16 @@
     />
     <style>
       html, body { margin: 0; padding: 0; }
-      html.dark { background-color: #000000; }
-      html:not(.dark) { background-color: #fafafa; }
+      /* Pre-paint canvas colours — must match --canvas in src/index.css. */
+      html.dark { background-color: #000000; color-scheme: dark; }
+      html:not(.dark) { background-color: #f2f1ea; color-scheme: light; }
     </style>
     <script>
       try {
-        if (localStorage.getItem("nearpool.theme") === "light") document.documentElement.classList.remove("dark");
+        if (localStorage.getItem("nearpool.theme") === "light") {
+          document.documentElement.classList.remove("dark");
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f2f1ea");
+        }
       } catch (e) {}
     </script>
   </head>

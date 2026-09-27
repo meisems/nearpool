@@ -562,7 +562,7 @@ export function CreatorTerminal({ onSwap }: { onSwap: () => void }) {
           onClick={cta.onClick}
           disabled={cta.disabled}
           className={`mt-3.5 flex h-12 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition-all ${
-            cta.disabled ? "cursor-not-allowed bg-card2 text-faint" : "bg-ink text-canvas hover:opacity-90"
+            cta.disabled ? "cursor-not-allowed bg-card2 text-faint" : "bg-accentfill text-onaccent hover:opacity-90"
           }`}
         >
           {cta.spinner && <IconLoader size={15} className="shrink-0 animate-spin" />}

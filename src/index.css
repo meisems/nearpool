@@ -3,78 +3,88 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * OKX-inspired design tokens.
+ * NEAR-inspired design tokens.
  *
- * Dark is the primary, product-defining palette: true-black canvas,
- * near-black elevated surfaces, hairline borders, stark white ink for
- * primary type/buttons, muted greys for secondary content, and a single
- * electric neon accent reserved for active/success/live states so it
- * stays meaningful instead of decorative.
+ * Built on the NEAR brand palette: NEAR green (#00EC97) as the signature
+ * accent, black and NEAR's warm off-white (#F2F1EA) as the two canvases,
+ * and lilac (#9797FF) as the secondary highlight. Green is reserved for
+ * live / success / primary-action states so it stays meaningful.
  *
- * The light palette is kept for the existing theme toggle but pulled into
- * the same monochrome-plus-neon language so switching themes never feels
- * like a different product.
+ * Every surface, line and glow is derived from the same canvas hue per
+ * theme, so cards, glass and ambient light blend into the page instead of
+ * sitting on top of it.
  */
 
 :root {
-  --canvas: #fafafa;
-  --card: #ffffff;
-  --card-2: #f2f2f2;
-  --line: #e0e0e0;
-  --line-soft: #ececec;
+  color-scheme: light;
+  --canvas: #f2f1ea;
+  --card: #fbfaf6;
+  --card-2: #ebe9e0;
+  --line: #dcd9cd;
+  --line-soft: #e6e4da;
   --ink: #000000;
-  --muted: #55565b;
-  --faint: #8e8e93;
-  --accent: #00c880;
-  --accent-strong: #00a86b;
-  --accent-soft: rgba(0, 200, 128, 0.1);
-  --coin: #b98600;
-  --coin-strong: #916b00;
-  --coin-soft: #fff3cf;
-  --vip: #00c880;
-  --amber: #b9770e;
-  --amber-soft: #fff1d2;
-  --danger: #d8253f;
-  --shadow-soft: 0 10px 28px -14px rgba(0, 0, 0, 0.16);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 20px 48px -24px rgba(0, 0, 0, 0.12);
-  --shadow-pop: 0 18px 60px -18px rgba(0, 0, 0, 0.22);
-  --grid-dot: #e4e4e4;
-  --glow-a: rgba(0, 200, 128, 0.07);
-  --glow-b: rgba(0, 200, 128, 0.04);
+  --muted: #55544e;
+  --faint: #8a887e;
+
+  /* NEAR green: fills use the true brand hex; text uses a deeper shade for contrast on off-white. */
+  --accent: #00a36c;
+  --accent-strong: #00774f;
+  --accent-soft: rgba(0, 236, 151, 0.16);
+  --accent-fill: #00ec97;
+  --on-accent: #000000;
+
+  /* NEAR lilac as the secondary highlight. */
+  --coin: #5f5fd6;
+  --coin-strong: #4747b8;
+  --coin-soft: rgba(151, 151, 255, 0.18);
+  --coin-fill: #9797ff;
+  --on-coin: #000000;
+
+  --vip: #00c27c;
+  --amber: #a86b00;
+  --amber-soft: rgba(255, 200, 96, 0.22);
+  --danger: #d4383e;
+  --shadow-soft: 0 10px 28px -14px rgba(40, 36, 20, 0.18);
+  --shadow-card: 0 1px 2px rgba(40, 36, 20, 0.05), 0 20px 48px -24px rgba(40, 36, 20, 0.16);
+  --shadow-pop: 0 18px 60px -18px rgba(40, 36, 20, 0.26);
+  --grid-dot: #d9d6c9;
+  --glow-a: rgba(0, 236, 151, 0.1);
+  --glow-b: rgba(151, 151, 255, 0.1);
 }
 
 .dark {
-  /* OKX-style true black + elevated near-black surfaces */
+  color-scheme: dark;
   --canvas: #000000;
-  --card: #111111;
-  --card-2: #1a1a1a;
+  --card: #0f0f0f;
+  --card-2: #191919;
   --line: #262626;
-  --line-soft: #1c1c1c;
-
-  /* Stark monochrome contrast */
+  --line-soft: #1b1b1b;
   --ink: #ffffff;
-  --muted: #8e8e93;
-  --faint: #707070;
+  --muted: #9a9a9a;
+  --faint: #6f6f6f;
 
-  /* Electric neon — reserved for active / success / live states */
-  --accent: #00ffa3;
-  --accent-strong: #6dffc4;
-  --accent-soft: rgba(0, 255, 163, 0.14);
+  --accent: #00ec97;
+  --accent-strong: #6ff5c2;
+  --accent-soft: rgba(0, 236, 151, 0.13);
+  --accent-fill: #00ec97;
+  --on-accent: #000000;
 
-  --coin: #f0b90b;
-  --coin-strong: #ffd34f;
-  --coin-soft: rgba(240, 185, 11, 0.14);
-  --vip: #00ffa3;
-  --amber: #ffb21a;
-  --amber-soft: rgba(255, 178, 26, 0.14);
-  --danger: #ff3b5c;
+  --coin: #9797ff;
+  --coin-strong: #bdbdff;
+  --coin-soft: rgba(151, 151, 255, 0.14);
+  --coin-fill: #9797ff;
+  --on-coin: #000000;
 
+  --vip: #00ec97;
+  --amber: #ffc860;
+  --amber-soft: rgba(255, 200, 96, 0.13);
+  --danger: #ff7966;
   --shadow-soft: 0 12px 36px -12px rgba(0, 0, 0, 0.7);
   --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 64px -32px rgba(0, 0, 0, 0.9);
   --shadow-pop: 0 24px 64px -16px rgba(0, 0, 0, 0.95);
-  --grid-dot: #161616;
-  --glow-a: rgba(0, 255, 163, 0.07);
-  --glow-b: rgba(0, 255, 163, 0.04);
+  --grid-dot: #1a1a1a;
+  --glow-a: rgba(0, 236, 151, 0.08);
+  --glow-b: rgba(151, 151, 255, 0.07);
 }
 
 @theme inline {
@@ -89,9 +99,13 @@
   --color-accent: var(--accent);
   --color-accentstrong: var(--accent-strong);
   --color-accentsoft: var(--accent-soft);
+  --color-accentfill: var(--accent-fill);
+  --color-onaccent: var(--on-accent);
   --color-coin: var(--coin);
   --color-coinstrong: var(--coin-strong);
   --color-coinsoft: var(--coin-soft);
+  --color-coinfill: var(--coin-fill);
+  --color-oncoin: var(--on-coin);
   --color-vip: var(--vip);
   --color-amberish: var(--amber);
   --color-ambersoft: var(--amber-soft);
@@ -105,16 +119,17 @@ html {
   font-family: var(--font-body);
   background: var(--canvas);
   color: var(--ink);
-  transition: background-color 0.45s ease, color 0.45s ease;
   scroll-behavior: smooth;
   overflow-x: hidden;
 }
 
+/* The ambient glow layer in App.tsx paints the page light; body stays flat
+   so there is exactly one gradient source and no double-tinted seams. */
 body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  background: radial-gradient(circle at 12% 4%, var(--glow-a), transparent 28rem), radial-gradient(circle at 88% 18%, var(--glow-b), transparent 24rem), var(--canvas);
+  background: var(--canvas);
   overflow-x: hidden;
 }
 
@@ -132,7 +147,26 @@ input:focus-visible, button:focus-visible, a:focus-visible {
   border-radius: 6px;
 }
 
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.45s; }
+/*
+ * Theme switching.
+ * With View Transitions, the new theme is revealed as a circle growing from
+ * the toggle (ThemeProvider sets --theme-x/y) instead of cross-fading two
+ * full-page snapshots, which produced a muddy grey mid-frame.
+ * Without them, .theme-switching briefly transitions every colour at once so
+ * surfaces, text and borders change together rather than some snapping.
+ */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: theme-reveal 0.55s cubic-bezier(0.65, 0, 0.35, 1); }
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--theme-x, 50%) var(--theme-y, 0%)); }
+  to { clip-path: circle(var(--theme-r, 150vmax) at var(--theme-x, 50%) var(--theme-y, 0%)); }
+}
+.theme-switching, .theme-switching *, .theme-switching *::before, .theme-switching *::after {
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.35s ease, fill 0.35s ease, box-shadow 0.35s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) { animation: none; }
+}
 
 input[type="range"].cut-slider {
   -webkit-appearance: none; appearance: none; height: 3px; border-radius: 999px;
@@ -181,8 +215,8 @@ button:not(:disabled):active { transform: translateY(1px); }
   --content-bg: var(--card);
   --change-path-bg: var(--card-2);
   --home-button-bg: var(--card-2);
-  --confirm-button-bg: var(--ink);
-  --confirm-button-bg-hover: var(--accent);
+  --confirm-button-bg: var(--accent-fill);
+  --confirm-button-bg-hover: var(--accent-strong);
   --error: var(--danger);
   --close-button-bg-color: var(--card-2);
   --close-button-fill-icon-color: var(--muted);

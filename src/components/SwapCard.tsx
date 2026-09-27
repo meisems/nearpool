@@ -302,7 +302,7 @@ export function SwapCard({ onInject }: { onInject: () => void }) {
             className={`mt-4 flex h-[52px] w-full items-center justify-center gap-2 rounded-full text-[15px] font-semibold transition-all ${
               (disabledReason || swap.busy) && accountId
                 ? "cursor-not-allowed bg-card2 text-faint"
-                : "bg-coin text-canvas shadow-(--shadow-soft) hover:opacity-90 dark:text-[#241a06]"
+                : "bg-coinfill text-oncoin shadow-(--shadow-soft) hover:opacity-90"
             }`}
           >
             {swap.busy ? (
