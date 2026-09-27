@@ -10,12 +10,13 @@ import { counterToken, displaySymbol, type RefPool } from "../lib/refFinance";
 import { fmtAmount, shortAccount } from "../lib/format";
 import { ActivityList } from "../components/ActivityList";
 import { InjectPanel } from "../components/InjectPanel";
+import { CreatePoolPanel } from "../components/CreatePoolPanel";
 import { QuickTokens, TokenSearch } from "../components/TokenSearch";
 import { TrackedList } from "../components/TrackedList";
 import { SwapCard } from "../components/SwapCard";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { Button, Card, CopyButton, fmtPrice, Skeleton, Stat } from "../components/ui";
-import { IconArrowUpRight, IconExternal, IconStar, IconStarFill, IconSwap } from "../components/icons";
+import { IconArrowUpRight, IconExternal, IconPlus, IconStar, IconStarFill, IconSwap } from "../components/icons";
 
 function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
@@ -144,6 +145,9 @@ export function TokenPage() {
   };
 
   const noPools = pools.isSuccess && pools.data.length === 0 && requestedPool === null;
+  // Pool creation: shown automatically when the token has no pool, or via "New pool".
+  const creating = noPools || params.get("new") === "1";
+  const openPool = (id: number) => setParams({ pool: String(id) }, { replace: true });
 
   return (
     <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
@@ -173,18 +177,32 @@ export function TokenPage() {
             </div>
           </div>
 
-          {(pools.data?.length ?? 0) > 1 && (
+          {(pools.data?.length ?? 0) > 0 && (
             <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1">
               {pools.data!.slice(0, 8).map((p) => (
-                <PoolChip key={p.id} pool={p} tokenId={tokenId} active={p.id === poolId} onClick={() => setParams({ pool: String(p.id) }, { replace: true })} />
+                <PoolChip key={p.id} pool={p} tokenId={tokenId} active={!creating && p.id === poolId} onClick={() => openPool(p.id)} />
               ))}
+              <button
+                onClick={() => setParams(poolId !== null ? { pool: String(poolId), new: "1" } : { new: "1" }, { replace: true })}
+                className={`flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-dashed px-3 text-sm transition ${
+                  creating ? "border-accent text-ink" : "border-line text-muted hover:text-ink"
+                }`}
+              >
+                <IconPlus size={13} /> New pool
+              </button>
             </div>
           )}
         </Card>
 
       {/* action */}
       <div className="min-w-0 lg:sticky lg:top-24 lg:col-start-2 lg:row-span-3 lg:row-start-1">
-        {m.pool && poolHoldsToken ? (
+        {creating ? (
+          <CreatePoolPanel
+            tokenId={tokenId}
+            onCreated={openPool}
+            onCancel={noPools ? undefined : () => setParams(poolId !== null ? { pool: String(poolId) } : {}, { replace: true })}
+          />
+        ) : m.pool && poolHoldsToken ? (
           <InjectPanel pool={m.pool} tokenId={tokenId} tracked={tracked} onTrack={toggleTrack} />
         ) : !noPools ? (
           <Card className="p-5">
@@ -198,10 +216,8 @@ export function TokenPage() {
         {/* market + position */}
         {noPools ? (
           <Card className="min-w-0 p-6 text-center lg:col-start-1 lg:row-start-2">
-            <p className="text-ink">No Ref pool for {symbol} yet</p>
-            <a href="https://app.ref.finance/pools" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
-              Create one on Ref <IconArrowUpRight size={13} />
-            </a>
+            <p className="text-ink">No pool for {symbol} yet</p>
+            <p className="mt-1 text-sm text-muted">Create one, then add the first liquidity.</p>
           </Card>
         ) : (
           <Card className="min-w-0 p-4 sm:p-5 lg:col-start-1 lg:row-start-2">
@@ -302,7 +318,7 @@ const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode
   docs: {
     title: "Docs",
     sections: [
-      ["How it works", <ol key="h" className="list-decimal space-y-1 pl-5"><li>Paste a token address.</li><li>Pick its Ref pool and enter an amount — the other side is sized from reserves.</li><li>Approve once. Storage, wrapping, deposits and <code>add_liquidity</code> run in order.</li></ol>],
+      ["How it works", <ol key="h" className="list-decimal space-y-1 pl-5"><li>Paste a token address.</li><li>Pick its Ref pool — or create one — and enter an amount. The other side is sized from reserves.</li><li>Approve once. Storage, wrapping, deposits and <code>add_liquidity</code> run in order.</li></ol>],
       ["Contracts", <ul key="c" className="space-y-1"><li><code>{REF_FINANCE_CONTRACT_ID}</code> — Ref Finance</li><li><code>{WRAP_NEAR_CONTRACT_ID}</code> — wrapped NEAR</li></ul>],
       ["Fees & deposits", <ul key="f" className="list-disc space-y-1 pl-5">{FEE_ENABLED && <li>nearpool fee: {fmtAmount(FEE_AMOUNT, NEAR_DECIMALS)} NEAR per injection or swap, sent to <code>{FEE_RECEIVER_ID}</code> as the last transaction.</li>}<li>Storage deposits (≈0.00125–0.1 NEAR) are refundable or stay withdrawable.</li><li>First position in a pool attaches 0.01 NEAR; unused part is refunded.</li></ul>],
       ["Tracking", <p key="t">Tracked tokens are saved in this browser only. Change is measured from the price when you started tracking.</p>],

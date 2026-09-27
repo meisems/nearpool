@@ -9,9 +9,9 @@ import { REF_QUERY_ROOT } from "./useRefData";
 export type SwapPhase = "idle" | "checking-storage" | "signing" | "success" | "error";
 
 export interface SwapRequest {
-  pool: RefPool;
-  tokenIn: string;
-  tokenOut: string;
+  /** Pools in hop order and the token path through them. */
+  pools: RefPool[];
+  path: string[];
   amountIn: bigint;
   slippageBps: number;
   payWithNative: boolean;
@@ -42,22 +42,25 @@ export function useRefSwap() {
       setReceipt(null);
       setPhase("checking-storage");
       try {
-        const [pool, snapshot, fee] = await Promise.all([
-          getPool(request.pool.id),
-          loadAccountSnapshot(accountId, [request.tokenIn, request.tokenOut]),
+        const tokenIn = request.path[0];
+        const tokenOut = request.path[request.path.length - 1];
+        // Re-read every hop so the quote and min_amount_out use current reserves.
+        const [pools, snapshot, fee] = await Promise.all([
+          Promise.all(request.pools.map((p) => getPool(p.id))),
+          loadAccountSnapshot(accountId, [tokenIn, tokenOut]),
           getPlatformFee(),
         ]);
-        const nextPlan = planSwap(snapshot, { ...request, pool, fee });
+        const nextPlan = planSwap(snapshot, { ...request, pools, fee });
         setPlan(nextPlan);
         setPhase("signing");
         const outcomes = await executePlannedTransactions(signAndSendTransactions, accountId, nextPlan.transactions);
         // The swap is the ft_transfer_call on tokenIn (the fee transfer, if any, comes after it).
-        const last = [...outcomes].reverse().find((o) => (o.transaction as { receiver_id?: string } | undefined)?.receiver_id === request.tokenIn);
+        const last = [...outcomes].reverse().find((o) => (o.transaction as { receiver_id?: string } | undefined)?.receiver_id === tokenIn);
         const result: SwapReceipt = {
           txHash: last ? outcomeTxHash(last) : null,
           expectedOut: nextPlan.expectedOut,
           minAmountOut: nextPlan.minAmountOut,
-          tokenOut: request.tokenOut,
+          tokenOut,
         };
         setReceipt(result);
         setPhase("success");

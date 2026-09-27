@@ -8,7 +8,7 @@ import {
   applySlippage, estimateAddLiquidity, estimateSwapOut, INIT_SHARES_SUPPLY, quoteCounterAmount, splitFunding, swapPriceImpactBps, spotPrice,
 } from "../src/utils/zapMath";
 import {
-  groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError,
+  groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError, bestRoute, quoteRoute, planCreatePool,
   type AccountSnapshot, type RefPool, type TokenAccountState, type PlannedCall,
 } from "../src/lib/refFinance";
 import { findOutcomeFailure, outcomeReturnValue, isValidAccountId } from "../src/lib/near";
@@ -170,7 +170,7 @@ test("empty pool: min_amounts equal amounts (initial price)", () => {
 });
 test("swap plan: register output, wrap, instant-swap msg", () => {
   const snap = snapshot({}, { [USDC]: token(USDC, 6, { userStorage: null }) });
-  const plan = planSwap(snap, { pool, tokenIn: "wrap.near", tokenOut: USDC, amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true });
+  const plan = planSwap(snap, { pools: [pool], path: ["wrap.near", USDC], amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true });
   assert.deepEqual(methods(plan.calls), ["U:storage_deposit", "W:near_deposit", "W:ft_transfer_call"]);
   const swap = plan.calls.at(-1)!;
   assert.equal(swap.gas, 180n * 10n ** 12n);
@@ -233,8 +233,50 @@ test("platform fee: last, its own transaction, a plain transfer, counted in the 
   assert.throws(() => planInjection(tightSnap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-near");
   // No fee → no transfer.
   assert.equal(planInjection(snap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee: null }).fee, 0n);
-  const swap = planSwap(snapshot(), { pool, tokenIn: "wrap.near", tokenOut: USDC, amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true, fee });
+  const swap = planSwap(snapshot(), { pools: [pool], path: ["wrap.near", USDC], amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true, fee });
   assert.equal(swap.calls.at(-1)!.receiverId, "nearpoolpf.near");
   assert.equal(swap.calls.at(-2)!.methodName, "ft_transfer_call");
+});
+test("two-hop swap: NEAR → USDC → token, slippage on the last hop, routed gas", () => {
+  const NPAID = "npaid-831d2b.nearpaid.near";
+  assert.ok(isValidAccountId(NPAID));
+  assert.deepEqual(parseTokenInput(NPAID), { kind: "token", tokenId: NPAID });
+  const second: RefPool = { id: 77, kind: "SIMPLE_POOL", tokenIds: [USDC, NPAID], reserves: [2_000_000_000n, 10n ** 30n], totalFeeBps: 20, sharesTotalSupply: NEAR };
+  const route = { pools: [pool, second], path: ["wrap.near", USDC, NPAID] };
+  const hop1 = quoteRoute({ pools: [pool], path: ["wrap.near", USDC] }, 2n * NEAR);
+  assert.equal(quoteRoute(route, 2n * NEAR), quoteRoute({ pools: [second], path: [USDC, NPAID] }, hop1));
+  const snap = snapshot({}, { [NPAID]: token(NPAID, 24, { userStorage: null }) });
+  const plan = planSwap(snap, { ...route, amountIn: 2n * NEAR, slippageBps: 100, payWithNative: true });
+  const swap = plan.calls.at(-1)!;
+  assert.equal(swap.gas, 280n * 10n ** 12n);
+  const msg = JSON.parse(swap.args.msg as string);
+  assert.deepEqual(msg.actions, [
+    { pool_id: 42, token_in: "wrap.near", token_out: USDC, min_amount_out: "0" },
+    { pool_id: 77, token_in: USDC, token_out: NPAID, min_amount_out: plan.minAmountOut.toString() },
+  ]);
+  // Output registration is on the final token, not the middle one.
+  assert.equal(plan.calls[0].receiverId, NPAID);
+  // Every transaction stays within the 300 TGas limit.
+  for (const tx of plan.transactions) assert.ok(tx.calls.reduce((g, c) => g + c.gas, 0n) <= 300n * 10n ** 12n);
+  // A route whose pools don't hold the hop tokens is rejected.
+  assert.throws(() => planSwap(snap, { pools: [second, pool], path: route.path, amountIn: NEAR, slippageBps: 50, payWithNative: true }), PlanError);
+  // bestRoute picks the higher output.
+  const direct: RefPool = { id: 9, kind: "SIMPLE_POOL", tokenIds: ["wrap.near", NPAID], reserves: [NEAR, 10n ** 24n], totalFeeBps: 30, sharesTotalSupply: NEAR };
+  const winner = bestRoute([{ pools: [direct], path: ["wrap.near", NPAID] }, route], 2n * NEAR);
+  assert.equal(winner?.route, route);
+});
+test("create pool: add_simple_pool with storage deposit, then the fee; budget and input checks", () => {
+  const native = { total: 5n * NEAR, storageReserved: 0n, available: 5n * NEAR };
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
+  const plan = planCreatePool(native, { tokenIds: ["npaid-831d2b.nearpaid.near", "wrap.near"], feeBps: 30, fee });
+  assert.deepEqual(plan.calls.map((c) => `${c.receiverId}:${c.methodName}`), ["v2.ref-finance.near:add_simple_pool", "nearpoolpf.near:transfer"]);
+  assert.deepEqual(plan.calls[0].args, { tokens: ["npaid-831d2b.nearpaid.near", "wrap.near"], fee: 30 });
+  assert.equal(plan.calls[0].deposit, NEAR / 10n);
+  assert.equal(plan.calls[0].gas, 50n * 10n ** 12n);
+  assert.equal(plan.transactions.length, 2);
+  assert.throws(() => planCreatePool(native, { tokenIds: ["wrap.near", "wrap.near"], feeBps: 30 }), PlanError);
+  assert.throws(() => planCreatePool(native, { tokenIds: ["a.near", "wrap.near"], feeBps: 0 }), PlanError);
+  const poor = { total: NEAR / 10n, storageReserved: 0n, available: NEAR / 10n };
+  assert.throws(() => planCreatePool(poor, { tokenIds: ["a.near", "wrap.near"], feeBps: 30, fee }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-near");
 });
 console.log(`\n${passed} passed`);

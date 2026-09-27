@@ -4,6 +4,7 @@ import { getNativeBalance } from "../lib/near";
 import {
   findPoolsForPair,
   findPoolsForToken,
+  findSwapRoutes,
   getPlatformFee,
   getFtMetadata,
   getPool,
@@ -13,6 +14,7 @@ import {
   type FtMetadata,
   type PlatformFee,
   type RefPool,
+  type SwapRoute,
 } from "../lib/refFinance";
 
 /** Shared query-key roots so a successful transaction can refresh everything at once. */
@@ -99,6 +101,17 @@ export function usePlatformFee() {
     queryKey: [REF_QUERY_ROOT, "platform-fee"],
     queryFn: getPlatformFee,
     staleTime: Infinity,
+    retry: 1,
+  });
+}
+
+/** Direct and two-hop swap routes between two tokens (resolved on-chain). */
+export function useSwapRoutes(tokenIn: string | null, tokenOut: string | null) {
+  return useQuery<SwapRoute[]>({
+    queryKey: [REF_QUERY_ROOT, "swap-routes", tokenIn, tokenOut],
+    queryFn: () => findSwapRoutes(tokenIn as string, tokenOut as string),
+    enabled: !!tokenIn && !!tokenOut && tokenIn !== tokenOut,
+    staleTime: 60_000,
     retry: 1,
   });
 }

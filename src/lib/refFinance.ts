@@ -17,6 +17,7 @@ import {
   FT_STORAGE_DEPOSIT_FALLBACK,
   GAS,
   LP_STORAGE_DEPOSIT,
+  POOL_CREATION_DEPOSIT,
   MAX_GAS_PER_TX,
   NEAR_DECIMALS,
   NEAR_GAS_RESERVE,
@@ -209,6 +210,11 @@ async function loadAllSimplePools(): Promise<RefPool[]> {
     for (const page of batch) results.push(...page.filter((pool) => pool.kind === SIMPLE_POOL));
   }
   return results;
+}
+
+/** Drop the cached pool list (e.g. right after creating a pool). */
+export function invalidatePoolIndex() {
+  poolIndex = null;
 }
 
 function simplePoolIndex(): Promise<RefPool[]> {
@@ -467,7 +473,7 @@ function fundingCalls(token: TokenAccountState, amount: bigint, payWithNative: b
   return { calls, wrap };
 }
 
-function assertNativeBudget(snapshot: AccountSnapshot, calls: PlannedCall[]) {
+function assertNativeBudget(snapshot: Pick<AccountSnapshot, "native">, calls: PlannedCall[]) {
   const needed = totalAttachedDeposit(calls) + NEAR_GAS_RESERVE;
   if (needed > snapshot.native.available) {
     throw new PlanError(
@@ -668,10 +674,94 @@ export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent
 
 /* ---------------------------------------------------------------- swap */
 
+/** An ordered swap path: `path[i]` → `path[i + 1]` through `pools[i]`. */
+export interface SwapRoute {
+  pools: RefPool[];
+  path: string[];
+}
+
+/** Exact output of a route for `amountIn`, hop by hop (0 if any hop can't fill). */
+export function quoteRoute(route: SwapRoute, amountIn: bigint): bigint {
+  let amount = amountIn;
+  for (let i = 0; i < route.pools.length; i++) {
+    const pool = route.pools[i];
+    const inIdx = pool.tokenIds.indexOf(route.path[i]);
+    const outIdx = pool.tokenIds.indexOf(route.path[i + 1]);
+    if (inIdx < 0 || outIdx < 0) return 0n;
+    amount = estimateSwapOut(amount, pool.reserves[inIdx], pool.reserves[outIdx], pool.totalFeeBps);
+    if (amount <= 0n) return 0n;
+  }
+  return amount;
+}
+
+/** Output at spot prices with no fee or impact — the reference for price impact. */
+export function spotQuoteRoute(route: SwapRoute, amountIn: bigint): bigint {
+  let amount = amountIn;
+  for (let i = 0; i < route.pools.length; i++) {
+    const pool = route.pools[i];
+    const inIdx = pool.tokenIds.indexOf(route.path[i]);
+    const outIdx = pool.tokenIds.indexOf(route.path[i + 1]);
+    if (inIdx < 0 || outIdx < 0 || pool.reserves[inIdx] <= 0n) return 0n;
+    amount = (amount * pool.reserves[outIdx]) / pool.reserves[inIdx];
+  }
+  return amount;
+}
+
+/** Highest-output route for `amountIn`, or null if none can fill it. */
+export function bestRoute(routes: SwapRoute[], amountIn: bigint): { route: SwapRoute; out: bigint } | null {
+  let best: { route: SwapRoute; out: bigint } | null = null;
+  for (const route of routes) {
+    const out = quoteRoute(route, amountIn);
+    if (out > 0n && (!best || out > best.out)) best = { route, out };
+  }
+  return best;
+}
+
+const MAX_ROUTE_CANDIDATES = 40;
+
+/**
+ * Candidate routes from `tokenIn` to `tokenOut` over Ref simple pools:
+ * every direct pool, plus two-hop routes through any token both sides are
+ * paired with (deepest pool per leg). Lets tokens that only trade against,
+ * say, USDC be bought with NEAR.
+ */
+export async function findSwapRoutes(tokenIn: string, tokenOut: string): Promise<SwapRoute[]> {
+  if (tokenIn === tokenOut) return [];
+  const pools = (await simplePoolIndex()).filter((p) => p.tokenIds.length === 2 && p.sharesTotalSupply > 0n);
+  const holding = (token: string) => pools.filter((p) => p.tokenIds.includes(token));
+  const reserveOf = (pool: RefPool, token: string) => pool.reserves[pool.tokenIds.indexOf(token)] ?? 0n;
+  const deepestFor = (candidates: RefPool[], token: string) =>
+    candidates.reduce<RefPool | null>((best, p) => (!best || reserveOf(p, token) > reserveOf(best, token) ? p : best), null);
+
+  const routes: SwapRoute[] = [];
+  const fromIn = holding(tokenIn);
+  for (const pool of fromIn.filter((p) => p.tokenIds.includes(tokenOut))) routes.push({ pools: [pool], path: [tokenIn, tokenOut] });
+
+  // Two hops: tokenIn → X → tokenOut. Iterate from the (usually smaller) tokenOut side.
+  const byMiddle = new Map<string, RefPool[]>();
+  for (const pool of holding(tokenOut)) {
+    const middle = counterToken(pool, tokenOut);
+    if (middle === tokenIn) continue;
+    byMiddle.set(middle, [...(byMiddle.get(middle) ?? []), pool]);
+  }
+  const twoHop: Array<{ route: SwapRoute; depth: bigint }> = [];
+  for (const [middle, outPools] of byMiddle) {
+    const first = deepestFor(fromIn.filter((p) => p.tokenIds.includes(middle)), middle);
+    const second = deepestFor(outPools, middle);
+    if (!first || !second) continue;
+    const depth = reserveOf(first, middle) < reserveOf(second, middle) ? reserveOf(first, middle) : reserveOf(second, middle);
+    twoHop.push({ route: { pools: [first, second], path: [tokenIn, middle, tokenOut] }, depth });
+  }
+  twoHop.sort((a, b) => (b.depth > a.depth ? 1 : b.depth < a.depth ? -1 : 0));
+  routes.push(...twoHop.slice(0, MAX_ROUTE_CANDIDATES).map((c) => c.route));
+  return routes;
+}
+
 export interface SwapIntent {
-  pool: RefPool;
-  tokenIn: string;
-  tokenOut: string;
+  /** Pools in hop order; one pool for a direct swap. */
+  pools: RefPool[];
+  /** Tokens in hop order: [tokenIn, (middle), tokenOut]. */
+  path: string[];
   amountIn: bigint;
   slippageBps: number;
   payWithNative: boolean;
@@ -688,17 +778,29 @@ export interface SwapPlan {
   steps: PlanStep[];
 }
 
-/** Single-hop Ref "instant swap": the output is sent straight back to the wallet. */
+/**
+ * Ref "instant swap": one `ft_transfer_call` whose message chains the hops;
+ * the output is sent straight back to the wallet. Slippage is enforced on
+ * the final hop (intermediate hops only need to fill).
+ */
 export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPlan {
-  const { pool, tokenIn, tokenOut, amountIn, slippageBps, payWithNative, fee } = intent;
+  const { pools, path, amountIn, slippageBps, payWithNative, fee } = intent;
   const accountId = snapshot.accountId;
-  if (pool.kind !== SIMPLE_POOL) throw new PlanError("unsupported-pool", `pool #${pool.id} is not a simple pool`);
+  if (pools.length === 0 || pools.length > 2 || path.length !== pools.length + 1) {
+    throw new PlanError("unsupported-pool", "invalid swap route");
+  }
+  const tokenIn = path[0];
+  const tokenOut = path[path.length - 1];
+  for (let i = 0; i < pools.length; i++) {
+    const pool = pools[i];
+    if (pool.kind !== SIMPLE_POOL) throw new PlanError("unsupported-pool", `pool #${pool.id} is not a simple pool`);
+    if (!pool.tokenIds.includes(path[i]) || !pool.tokenIds.includes(path[i + 1])) {
+      throw new PlanError("unsupported-pool", `pool #${pool.id} doesn't hold this pair`);
+    }
+  }
   if (amountIn <= 0n) throw new PlanError("zero-amount", "enter an amount");
-  const inIdx = pool.tokenIds.indexOf(tokenIn);
-  const outIdx = pool.tokenIds.indexOf(tokenOut);
-  if (inIdx < 0 || outIdx < 0) throw new PlanError("unsupported-pool", `pool #${pool.id} doesn't hold this pair`);
 
-  const expectedOut = estimateSwapOut(amountIn, pool.reserves[inIdx], pool.reserves[outIdx], pool.totalFeeBps);
+  const expectedOut = quoteRoute({ pools, path }, amountIn);
   if (expectedOut <= 0n) throw new PlanError("no-liquidity", "the pool has no depth for this trade");
   const minAmountOut = applySlippage(expectedOut, slippageBps);
 
@@ -730,6 +832,7 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
     throw new PlanError("insufficient-token", `not enough ${displaySymbol(tokenIn, inState.metadata)} in your wallet`);
   }
 
+  const last = pools.length - 1;
   calls.push({
     step: "swap",
     receiverId: tokenIn,
@@ -739,12 +842,17 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
       amount: amountIn.toString(),
       msg: JSON.stringify({
         force: 0,
-        actions: [{ pool_id: pool.id, token_in: tokenIn, token_out: tokenOut, min_amount_out: minAmountOut.toString() }],
+        actions: pools.map((pool, i) => ({
+          pool_id: pool.id,
+          token_in: path[i],
+          token_out: path[i + 1],
+          min_amount_out: i === last ? minAmountOut.toString() : "0",
+        })),
       }),
     },
-    gas: GAS.SWAP,
+    gas: pools.length > 1 ? GAS.SWAP_MULTI_HOP : GAS.SWAP,
     deposit: ONE_YOCTO,
-    label: `swap on pool #${pool.id} · min ${fmtAmount(minAmountOut, outState.metadata.decimals)} ${displaySymbol(tokenOut, outState.metadata)}`,
+    label: `swap via ${pools.map((p) => `#${p.id}`).join(" → ")} · min ${fmtAmount(minAmountOut, outState.metadata.decimals)} ${displaySymbol(tokenOut, outState.metadata)}`,
   });
 
   if (fee) calls.push(feeCall(fee));
@@ -758,6 +866,49 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
     fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
   };
+}
+
+/* ---------------------------------------------------------------- pool creation */
+
+/** Swap-fee tiers offered for new pools, in basis points. */
+export const POOL_FEE_TIERS = [5, 20, 30, 100] as const;
+
+export interface CreatePoolIntent {
+  tokenIds: [string, string];
+  /** Pool swap fee in basis points. */
+  feeBps: number;
+  fee?: PlatformFee | null;
+}
+
+export interface CreatePoolPlan {
+  calls: PlannedCall[];
+  transactions: PlannedTransaction[];
+  fee: bigint;
+}
+
+/**
+ * Ref `add_simple_pool({ tokens, fee })`. The attached deposit pays the new
+ * pool's storage; Ref refunds whatever isn't used. The pool starts empty —
+ * its first liquidity sets the price.
+ */
+export function planCreatePool(native: NativeBalance, intent: CreatePoolIntent): CreatePoolPlan {
+  const { tokenIds, feeBps, fee } = intent;
+  if (tokenIds[0] === tokenIds[1]) throw new PlanError("unsupported-pool", "pick two different tokens");
+  if (!Number.isInteger(feeBps) || feeBps <= 0 || feeBps >= 10_000) throw new PlanError("unsupported-pool", "invalid pool fee");
+  const calls: PlannedCall[] = [
+    {
+      step: "inject",
+      receiverId: REF_FINANCE_CONTRACT_ID,
+      methodName: "add_simple_pool",
+      args: { tokens: tokenIds, fee: feeBps },
+      gas: GAS.ADD_SIMPLE_POOL,
+      deposit: POOL_CREATION_DEPOSIT,
+      label: `create pool · ${(feeBps / 100).toFixed(2)}% fee · ${fmtNear(POOL_CREATION_DEPOSIT)} storage, unused part refunded`,
+    },
+  ];
+  if (fee) calls.push(feeCall(fee));
+  assertNativeBudget({ native }, calls);
+  return { calls, transactions: groupCalls(calls), fee: fee?.amount ?? 0n };
 }
 
 /* ================================================================ errors */

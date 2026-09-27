@@ -4,6 +4,7 @@
  * served straight from ./dist with single-page-application fallback.
  */
 import { handleActivityRequest, type Env } from "./activity";
+import { handleRpcProxy } from "./rpcProxy";
 
 interface WorkerEnv extends Env {
   ASSETS: Fetcher;
@@ -11,6 +12,6 @@ interface WorkerEnv extends Env {
 
 export default {
   async fetch(request, env): Promise<Response> {
-    return (await handleActivityRequest(request, env)) ?? env.ASSETS.fetch(request);
+    return (await handleRpcProxy(request, env)) ?? (await handleActivityRequest(request, env)) ?? env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<WorkerEnv>;

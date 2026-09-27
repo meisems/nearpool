@@ -12,6 +12,7 @@
 
 export interface Env {
   DB?: D1Database;
+  /** Primary RPC. Set as a secret when it contains an API key (e.g. Lava). */
   NEAR_RPC_URL?: string;
   /** Comma-separated fallbacks, tried in order. */
   NEAR_FALLBACK_RPC_URLS?: string;

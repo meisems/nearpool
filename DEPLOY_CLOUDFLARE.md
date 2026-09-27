@@ -64,7 +64,7 @@ npx wrangler d1 migrations apply nearpool-activity --remote
 ### Deploy from your machine
 
 ```bash
-npm run cf:deploy           # vite build → wrangler deploy
+npm run cf:deploy           # wrangler deploy (runs `npm run build` first via [build])
 ```
 
 wrangler uploads `dist/` as static assets and `worker/index.ts` as the
@@ -79,8 +79,10 @@ Your site is live at `https://nearpool.<your-subdomain>.workers.dev`.
 
 1. Dashboard → **Workers & Pages → Create → Import a repository** and pick
    `meisems/nearpool`.
-2. Build command: `npm run build`
-3. Deploy command: `npx wrangler deploy`
+2. Build command: leave empty (or `npm run build`) — `wrangler.toml` has a
+   `[build]` step, so `wrangler deploy` always builds `dist/` first.
+3. Deploy command: `npx wrangler deploy` (non-production branches use
+   `npx wrangler versions upload`, which builds the same way).
 4. Add the build variables from [Environment variables](#environment-variables)
    if you need to override the defaults.
 
@@ -148,14 +150,47 @@ The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
 production, put a dedicated RPC (FastNEAR, Lava, Ankr, etc.) in
 `VITE_NEAR_RPC_URL`; the fallbacks cover outages.
 
-### Runtime (activity API)
+### Runtime (Worker / Pages Function)
 
-Used by the Worker / Pages Function to verify published transactions.
-Workers: `[vars]` in `wrangler.toml`. Pages: **Settings → Variables and
-Secrets**.
+Used by `/api/rpc` (the RPC proxy) and the activity feed. Workers: `[vars]`
+in `wrangler.toml`, secrets via `wrangler secret put`. Pages: **Settings →
+Variables and Secrets**.
 
 | Variable | Default |
 | --- | --- |
+| `NEAR_RPC_URL` (**secret**) | `https://rpc.mainnet.near.org` |
+| `NEAR_FALLBACK_RPC_URLS` | same list as above |
+| `REF_CONTRACT_ID` | `v2.ref-finance.near` |
+
+## Using a keyed RPC (Lava)
+
+Never put an API key in a `VITE_` variable: those are compiled into the
+JavaScript every visitor downloads. Keep the key on Cloudflare and let the
+site call its own `/api/rpc` proxy (`worker/rpcProxy.ts`), which forwards to
+your provider:
+
+1. In the Lava dashboard, copy your **NEAR mainnet HTTPS (JSON-RPC)**
+   endpoint — the full URL, including the key.
+2. Store it as a secret:
+   - Workers: `npx wrangler secret put NEAR_RPC_URL` and paste the URL.
+   - Pages: **Settings → Variables and Secrets → Add**, name
+     `NEAR_RPC_URL`, type **Secret**.
+3. Set the build variable `VITE_NEAR_RPC_URL=/api/rpc` (Workers Builds /
+   Pages build settings, or in your shell for `npm run cf:deploy`), then
+   redeploy.
+
+Check it: `curl -X POST https://<your-host>/api/rpc -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"status","params":[]}'`
+should return chain status, and the key must not appear anywhere in the
+site's page source or JS.
+
+The proxy only forwards standard NEAR JSON-RPC methods (queries, blocks,
+transaction status and submission), rejects browser requests from other
+websites, limits request size, and falls back to the public endpoints if
+Lava errors or rate-limits. It can't stop someone scripting requests
+against `/api/rpc` directly, so also set usage limits / alerts in the Lava
+dashboard.
+
+--- | --- |
 | `NEAR_RPC_URL` | `https://rpc.mainnet.near.org` |
 | `NEAR_FALLBACK_RPC_URLS` | same list as above |
 | `REF_CONTRACT_ID` | `v2.ref-finance.near` |
@@ -170,7 +205,7 @@ plain var: `npx wrangler secret put NEAR_RPC_URL` (Workers) or mark it
 
 ```bash
 npx wrangler d1 migrations apply nearpool-activity --local
-npm run cf:dev              # build + wrangler dev on http://localhost:8787
+npm run cf:dev              # wrangler dev on http://localhost:8787 (builds first)
 ```
 
 For the Pages flavour:
