@@ -11,8 +11,16 @@ const env = import.meta.env;
 
 export const NETWORK_ID = "mainnet" as const;
 
-/** Primary RPC endpoint. Additional endpoints are used as ordered fallbacks. */
-export const NODE_URL: string = env.VITE_NEAR_RPC_URL || "https://rpc.mainnet.near.org";
+/**
+ * Primary RPC endpoint. Additional endpoints are used as ordered fallbacks.
+ * A path such as "/api/rpc" means this site's own RPC proxy (worker/rpcProxy.ts),
+ * which keeps a keyed provider's API key off the client.
+ */
+function resolveRpcUrl(value: string): string {
+  if (value.startsWith("/") && typeof window !== "undefined") return new URL(value, window.location.origin).toString();
+  return value;
+}
+export const NODE_URL: string = resolveRpcUrl(env.VITE_NEAR_RPC_URL || "https://rpc.mainnet.near.org");
 
 const DEFAULT_FALLBACK_RPC_URLS = [
   "https://free.rpc.fastnear.com",

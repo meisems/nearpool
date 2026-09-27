@@ -19,8 +19,10 @@ database_name = "nearpool-activity"
 database_id = "5a81f944-1f99-4d49-b9c0-8e891d43e327"
 migrations_dir = "migrations"
 
+# NEAR_RPC_URL is a secret (it holds your RPC provider's API key):
+#   npx wrangler secret put NEAR_RPC_URL
+# Unset, it defaults to https://rpc.mainnet.near.org.
 [vars]
-NEAR_RPC_URL = "https://rpc.mainnet.near.org"
 NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com"
 REF_CONTRACT_ID = "v2.ref-finance.near"
 

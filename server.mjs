@@ -328,8 +328,69 @@ async function handleStatic(req, res, url) {
   }
 }
 
+/* ------------------------------------------------------------ RPC proxy */
+// Same-origin NEAR RPC proxy (mirrors worker/rpcProxy.ts): keeps a keyed
+// provider URL in NEAR_RPC_URL on the server; the browser uses /api/rpc.
+const RPC_ALLOWED_METHODS = new Set([
+  "query", "block", "chunk", "tx", "EXPERIMENTAL_tx_status", "EXPERIMENTAL_receipt",
+  "EXPERIMENTAL_protocol_config", "status", "gas_price", "validators",
+  "send_tx", "broadcast_tx_async", "broadcast_tx_commit",
+]);
+const RPC_MAX_BODY = 64 * 1024;
+
+async function handleRpcProxy(req, res) {
+  const origin = req.headers.origin;
+  try {
+    if (origin && new URL(origin).host !== req.headers.host) return sendJson(res, 403, { error: "cross-origin RPC is not allowed" });
+  } catch {
+    return sendJson(res, 403, { error: "invalid origin" });
+  }
+  let body;
+  try {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > RPC_MAX_BODY) return sendJson(res, 413, { error: "request too large" });
+      chunks.push(chunk);
+    }
+    body = Buffer.concat(chunks).toString("utf8");
+    const payload = JSON.parse(body);
+    const calls = Array.isArray(payload) ? payload : [payload];
+    if (calls.length === 0 || calls.length > 10) return sendJson(res, 400, { error: "invalid batch size" });
+    for (const call of calls) {
+      if (typeof call?.method !== "string" || !RPC_ALLOWED_METHODS.has(call.method)) {
+        return sendJson(res, 400, { error: `RPC method not allowed: ${String(call?.method)}` });
+      }
+    }
+  } catch {
+    return sendJson(res, 400, { error: "invalid JSON" });
+  }
+  let lastStatus = 502;
+  for (const upstream of RPC_URLS) {
+    try {
+      const response = await fetch(upstream, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (response.status === 429 || response.status >= 500) {
+        lastStatus = response.status;
+        continue;
+      }
+      res.writeHead(response.status, { "content-type": response.headers.get("content-type") || "application/json", "cache-control": "no-store" });
+      return res.end(Buffer.from(await response.arrayBuffer()));
+    } catch {
+      lastStatus = 502;
+    }
+  }
+  return sendJson(res, lastStatus === 429 ? 429 : 502, { error: "all NEAR RPC upstreams failed" });
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+  if (req.method === "POST" && url.pathname === "/api/rpc") return handleRpcProxy(req, res);
   if (req.method === "POST" && url.pathname === "/api/activity/publish") return handleActivityPublish(req, res);
   if (req.method === "GET" && url.pathname === "/api/activity/posts") return handleActivityPosts(res);
   if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });

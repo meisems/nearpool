@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** Primary NEAR RPC endpoint (default https://rpc.mainnet.near.org). */
+  /** Primary NEAR RPC endpoint (default https://rpc.mainnet.near.org). Use "/api/rpc" to go through the site's proxy. */
   readonly VITE_NEAR_RPC_URL?: string;
   /** Comma-separated fallback RPC endpoints, tried in order. */
   readonly VITE_NEAR_FALLBACK_RPC_URLS?: string;
