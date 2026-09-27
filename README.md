@@ -24,7 +24,9 @@ Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`
 ## Stack
 
 - React 18 + Vite + Tailwind v4 + Framer Motion
-- `@near-wallet-selector` (Meteor, HERE, Nightly, Sender) with `modal-ui`
+- `@near-wallet-selector` with `modal-ui`: HOT, Meteor, MyNearWallet, Intear, HERE, OKX, Sender,
+  Nightly (+ WalletConnect when a project ID is set). Web and app wallets work on mobile browsers;
+  extension wallets (Sender, OKX) show on desktop only.
 - `near-api-js` failover RPC provider for reads
 - Native `bigint` fixed-point math everywhere (no floats in transaction amounts)
 
@@ -71,6 +73,7 @@ npm run build && npm start   # production server on :10000 (serves dist/ + /api/
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` (interface fee recipient) |
 | `VITE_FEE_NEAR` | `0.1` NEAR per injection or swap; `0` disables |
+| `VITE_WALLETCONNECT_PROJECT_ID` | unset. Set it (cloud.reown.com) to add WalletConnect QR pairing |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | unset → in-memory activity feed (server only) |
 

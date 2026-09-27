@@ -145,6 +145,7 @@ the build happens: your shell for local deploys, or **Settings → Variables**
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` — receives the interface fee |
 | `VITE_FEE_NEAR` | `0.1` — fee per injection or swap; `0` disables it |
+| `VITE_WALLETCONNECT_PROJECT_ID` | unset — set it (free at cloud.reown.com) to add WalletConnect QR pairing |
 
 The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
 production, put a dedicated RPC (FastNEAR, Lava, Ankr, etc.) in
@@ -189,15 +190,6 @@ websites, limits request size, and falls back to the public endpoints if
 Lava errors or rate-limits. It can't stop someone scripting requests
 against `/api/rpc` directly, so also set usage limits / alerts in the Lava
 dashboard.
-
---- | --- |
-| `NEAR_RPC_URL` | `https://rpc.mainnet.near.org` |
-| `NEAR_FALLBACK_RPC_URLS` | same list as above |
-| `REF_CONTRACT_ID` | `v2.ref-finance.near` |
-
-If your RPC URL contains an API key, store it as a secret instead of a
-plain var: `npx wrangler secret put NEAR_RPC_URL` (Workers) or mark it
-**Encrypt** in the Pages dashboard.
 
 ---
 

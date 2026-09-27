@@ -217,3 +217,11 @@ button:not(:disabled):active { transform: translateY(1px); }
   border-radius: 24px;
   box-shadow: var(--shadow-pop);
 }
+
+/* Keep a wallet icon that fails to load (alt text) from pushing the row out. */
+#near-wallet-selector-modal .single-wallet .icon {
+  flex: none;
+  width: 48px;
+  overflow: hidden;
+  border-radius: 12px;
+}

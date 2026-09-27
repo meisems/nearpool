@@ -4,10 +4,11 @@ import type {
   FinalExecutionOutcome,
   Transaction,
   Wallet,
+  WalletModuleFactory,
   WalletSelector,
 } from "@near-wallet-selector/core";
 import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
-import { EXPLORER_URL, FALLBACK_RPC_URLS, NETWORK_ID, NODE_URL } from "../config/near";
+import { EXPLORER_URL, FALLBACK_RPC_URLS, NETWORK_ID, NODE_URL, WALLETCONNECT_PROJECT_ID } from "../config/near";
 import { viewMethod as rpcViewMethod, type ViewArgs } from "../lib/near";
 
 export type WalletStatus = "initializing" | "ready" | "error";
@@ -49,18 +50,54 @@ let selectorPromise: Promise<SelectorBundle> | null = null;
  * One selector per page — wallet modules keep global listeners. The wallet
  * SDKs are large, so they're code-split and loaded after first paint.
  */
+/** Swap a module's remote icon for a bundled copy (HOT's CDN icon doesn't always load). */
+function withIcon<T extends WalletModuleFactory>(factory: T, iconUrl: string): T {
+  return (async (options: Parameters<T>[0]) => {
+    const module = await factory(options);
+    return module && { ...module, metadata: { ...module.metadata, iconUrl } };
+  }) as T;
+}
+
 function getSelector(): Promise<SelectorBundle> {
   if (!selectorPromise) {
     selectorPromise = (async () => {
-      const [{ setupWalletSelector }, { setupModal }, { setupMeteorWallet }, { setupHereWallet }, { setupNightly }, { setupSender }] =
-        await Promise.all([
-          import("@near-wallet-selector/core"),
-          import("@near-wallet-selector/modal-ui"),
-          import("@near-wallet-selector/meteor-wallet"),
-          import("@near-wallet-selector/here-wallet"),
-          import("@near-wallet-selector/nightly"),
-          import("@near-wallet-selector/sender"),
-        ]);
+      const [
+        { setupWalletSelector },
+        { setupModal },
+        { setupHotWallet },
+        { setupMeteorWallet },
+        { setupMyNearWallet },
+        { setupIntearWallet },
+        { setupHereWallet },
+        { setupOKXWallet },
+        { setupSender },
+        { setupNightly },
+      ] = await Promise.all([
+        import("@near-wallet-selector/core"),
+        import("@near-wallet-selector/modal-ui"),
+        import("@near-wallet-selector/hot-wallet"),
+        import("@near-wallet-selector/meteor-wallet"),
+        import("@near-wallet-selector/my-near-wallet"),
+        import("@near-wallet-selector/intear-wallet"),
+        import("@near-wallet-selector/here-wallet"),
+        import("@near-wallet-selector/okx-wallet"),
+        import("@near-wallet-selector/sender"),
+        import("@near-wallet-selector/nightly"),
+      ]);
+      // Covers desktop (extensions + web wallets) and mobile (web wallets that
+      // work in any mobile browser, Telegram/app wallets via deep link, and
+      // in-app browsers). WalletConnect is added when a project ID is set.
+      const walletConnect = WALLETCONNECT_PROJECT_ID
+        ? (await import("@near-wallet-selector/wallet-connect")).setupWalletConnect({
+            projectId: WALLETCONNECT_PROJECT_ID,
+            metadata: {
+              name: "nearpool",
+              description: "Add liquidity to any NEAR token",
+              url: window.location.origin,
+              icons: [`${window.location.origin}/logo-mark-512.png`],
+            },
+          })
+        : null;
       const selector = await setupWalletSelector({
         network: {
           networkId: NETWORK_ID,
@@ -70,7 +107,17 @@ function getSelector(): Promise<SelectorBundle> {
           indexerUrl: "https://api.kitwallet.app",
         },
         fallbackRpcUrls: FALLBACK_RPC_URLS,
-        modules: [setupMeteorWallet(), setupHereWallet(), setupNightly(), setupSender()],
+        modules: [
+          withIcon(setupHotWallet(), "/wallets/hot.png"),
+          setupMeteorWallet(),
+          setupMyNearWallet(),
+          setupIntearWallet(),
+          setupHereWallet(),
+          setupOKXWallet(),
+          setupSender(),
+          setupNightly(),
+          ...(walletConnect ? [walletConnect] : []),
+        ],
       });
       const modal = setupModal(selector, {
         theme: "auto",
