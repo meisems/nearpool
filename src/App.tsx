@@ -58,7 +58,11 @@ function usePageTitle() {
 
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => window.scrollTo(0, 0), [pathname]);
+  // Braces matter: newer Chrome returns a Promise from scrollTo, and React
+  // would call that as the effect's cleanup on the next navigation and crash.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
   return null;
 }
 
@@ -103,7 +107,10 @@ export default function App() {
         <NearWalletProvider>
           <ThemeProvider>
             <ToastProvider>
-              <Shell />
+              {/* Last line of defense: a crash outside a page shows a retry card, not a blank screen. */}
+              <RouteErrorBoundary>
+                <Shell />
+              </RouteErrorBoundary>
             </ToastProvider>
           </ThemeProvider>
         </NearWalletProvider>
