@@ -40,8 +40,11 @@ function ThemeToggle() {
   const dark = theme === "dark";
   return (
     <button
-      onClick={toggle}
-      aria-label="toggle theme"
+      onClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        toggle({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+      }}
+      aria-label={dark ? "switch to light theme" : "switch to dark theme"}
       className="relative h-9 w-[60px] shrink-0 rounded-full border border-line bg-card2 transition-colors hover:border-accent/40"
     >
       <motion.span
@@ -188,7 +191,7 @@ export function Navbar() {
           aria-label="nearpool home"
           className="group flex shrink-0 items-center gap-2 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-accent/60"
         >
-          <Logo size={26} />
+          <Logo size={28} className="text-ink transition-colors group-hover:text-accent" />
           <span className="font-display text-[17px] font-semibold tracking-tight text-ink">nearpool</span>
         </Link>
 

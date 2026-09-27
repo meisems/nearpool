@@ -5,6 +5,7 @@ import { explorerTxUrl } from "../config/near";
 import { fetchActivity, type ActivityPost } from "../lib/activity";
 import { fmtAmount, shortAccount } from "../lib/format";
 import { TokenAvatar } from "./TokenAvatar";
+import { Logo } from "./Logo";
 import {
   IconArrowRight,
   IconChevronDown,
@@ -69,7 +70,7 @@ export function Hero({ onInject, onSwap }: { onInject: () => void; onSwap: () =>
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={onInject}
-              className="flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-canvas shadow-(--shadow-soft) transition-opacity hover:opacity-90 dark:text-[#06251a]"
+              className="flex h-12 items-center gap-2 rounded-full bg-accentfill px-6 text-sm font-semibold text-onaccent shadow-(--shadow-soft) transition-opacity hover:opacity-90"
             >
               inject liquidity <IconArrowRight size={15} />
             </motion.button>
@@ -109,7 +110,9 @@ export function Hero({ onInject, onSwap }: { onInject: () => void; onSwap: () =>
           <div className="absolute inset-[12%] rounded-full border border-line bg-card/40" />
           <div className="absolute inset-[26%] rounded-full border border-linesoft bg-card/60 shadow-(--shadow-soft)" />
           <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }} className="relative z-10">
-            <TokenAvatar size={110} className="shadow-(--shadow-pop)" />
+            <span className="flex h-[132px] w-[132px] items-center justify-center rounded-full border border-line bg-card shadow-(--shadow-pop)">
+              <Logo size={96} className="text-ink" />
+            </span>
           </motion.div>
           <div className="absolute bottom-[8%] left-1/2 -translate-x-1/2 rounded-full border border-line bg-card/80 px-3.5 py-1.5 font-mono text-[10.5px] text-muted backdrop-blur-md">
             the pool. it deepens.

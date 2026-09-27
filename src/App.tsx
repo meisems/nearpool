@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NearWalletProvider } from "./context/NearWalletContext";
 import { EXPLORER_URL, NODE_URL, REF_FINANCE_CONTRACT_ID } from "./config/near";
@@ -29,9 +29,16 @@ function Ambient() {
           WebkitMaskImage: "radial-gradient(120% 90% at 50% 0%, black 30%, transparent 78%)",
         }}
       />
-      <div className="drift-a absolute -top-32 left-[8%] h-[420px] w-[420px] rounded-full blur-[110px]" style={{ background: "var(--glow-a)" }} />
-      <div className="drift-b absolute top-[30%] -right-24 h-[380px] w-[380px] rounded-full blur-[110px]" style={{ background: "var(--glow-b)" }} />
-      <div className="drift-a absolute bottom-[-10%] left-[30%] h-[300px] w-[300px] rounded-full blur-[100px]" style={{ background: "var(--glow-a)" }} />
+      {/* Soft NEAR-green and lilac light. Plain radial gradients (no blur filter)
+          fade smoothly into --canvas in both themes without banding rings. */}
+      <div
+        className="drift-a absolute -top-[30%] -left-[20%] h-[90vh] w-[80vw]"
+        style={{ background: "radial-gradient(closest-side, var(--glow-a), transparent)" }}
+      />
+      <div
+        className="drift-b absolute top-[10%] -right-[25%] h-[80vh] w-[70vw]"
+        style={{ background: "radial-gradient(closest-side, var(--glow-b), transparent)" }}
+      />
     </div>
   );
 }
@@ -41,7 +48,7 @@ function Footer() {
     <footer className="mt-16 border-t border-linesoft pt-6 sm:mt-20">
       <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2">
-          <Logo size={20} />
+          <Logo size={22} className="text-ink" />
           <span className="font-display text-sm font-semibold text-ink">nearpool</span>
           <span className="font-mono text-[10px] text-faint">· deepening Ref pools, one batch at a time</span>
         </div>
@@ -65,10 +72,29 @@ function Footer() {
   );
 }
 
+/** Browser-tab name per route, so each page is identifiable in tabs and history. */
+const PAGE_TITLES: Record<string, string> = {
+  "/": "nearpool · Instant LP injection on NEAR",
+  "/inject": "Inject liquidity · nearpool",
+  "/swap": "Swap on Ref · nearpool",
+  "/how-it-works": "How it works · nearpool",
+  "/docs": "Docs · nearpool",
+  "/terms": "Terms of use · nearpool",
+  "/privacy-policy": "Privacy policy · nearpool",
+};
+
+function usePageTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = PAGE_TITLES[pathname] ?? PAGE_TITLES["/"];
+  }, [pathname]);
+}
+
 function Shell() {
   const [splashDone, setSplashDone] = useState(false);
   const [revealed, setRevealed] = useState(false);
   const navigate = useNavigate();
+  usePageTitle();
 
   return (
     <div className="relative min-h-screen text-ink">

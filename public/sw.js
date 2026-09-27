@@ -9,7 +9,7 @@
 //
 // Bump CACHE_NAME whenever this file's caching behavior changes; the
 // activate handler clears any cache that doesn't match the current name.
-const CACHE_NAME = "nearpool-shell-v1";
+const CACHE_NAME = "nearpool-shell-v2";
 const SHELL_URL = "/";
 
 self.addEventListener("install", (event) => {

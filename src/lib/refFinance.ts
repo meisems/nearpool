@@ -10,6 +10,7 @@
  */
 import { actionCreators, type Transaction } from "@near-wallet-selector/core";
 import {
+  COMMON_TOKENS,
   FT_STORAGE_DEPOSIT_FALLBACK,
   GAS,
   LP_STORAGE_DEPOSIT,
@@ -185,7 +186,7 @@ export function getWhitelistedTokens(): Promise<Set<string>> {
 /** User-facing symbol: wrap.near is presented as NEAR since users can pay with native NEAR. */
 export function displaySymbol(tokenId: string, meta?: Pick<FtMetadata, "symbol"> | null): string {
   if (tokenId === WRAP_NEAR_CONTRACT_ID) return "NEAR";
-  return meta?.symbol ?? tokenId.split(".")[0].slice(0, 8).toUpperCase();
+  return meta?.symbol ?? COMMON_TOKENS.find((t) => t.id === tokenId)?.symbol ?? tokenId.split(".")[0].slice(0, 8).toUpperCase();
 }
 
 /* ================================================================ pool discovery */
