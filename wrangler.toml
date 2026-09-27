@@ -5,6 +5,12 @@ name = "nearpool"
 main = "worker/index.ts"
 compatibility_date = "2026-09-01"
 
+# Build the site before every `wrangler deploy` / `versions upload` / `dev`,
+# so Cloudflare Workers Builds works even if its dashboard build command is
+# empty (otherwise ./dist doesn't exist and the deploy fails).
+[build]
+command = "npm run build"
+
 [assets]
 directory = "./dist"
 binding = "ASSETS"

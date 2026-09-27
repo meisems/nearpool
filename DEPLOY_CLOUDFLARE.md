@@ -64,7 +64,7 @@ npx wrangler d1 migrations apply nearpool-activity --remote
 ### Deploy from your machine
 
 ```bash
-npm run cf:deploy           # vite build → wrangler deploy
+npm run cf:deploy           # wrangler deploy (runs `npm run build` first via [build])
 ```
 
 wrangler uploads `dist/` as static assets and `worker/index.ts` as the
@@ -79,8 +79,10 @@ Your site is live at `https://nearpool.<your-subdomain>.workers.dev`.
 
 1. Dashboard → **Workers & Pages → Create → Import a repository** and pick
    `meisems/nearpool`.
-2. Build command: `npm run build`
-3. Deploy command: `npx wrangler deploy`
+2. Build command: leave empty (or `npm run build`) — `wrangler.toml` has a
+   `[build]` step, so `wrangler deploy` always builds `dist/` first.
+3. Deploy command: `npx wrangler deploy` (non-production branches use
+   `npx wrangler versions upload`, which builds the same way).
 4. Add the build variables from [Environment variables](#environment-variables)
    if you need to override the defaults.
 
@@ -203,7 +205,7 @@ plain var: `npx wrangler secret put NEAR_RPC_URL` (Workers) or mark it
 
 ```bash
 npx wrangler d1 migrations apply nearpool-activity --local
-npm run cf:dev              # build + wrangler dev on http://localhost:8787
+npm run cf:dev              # wrangler dev on http://localhost:8787 (builds first)
 ```
 
 For the Pages flavour:
