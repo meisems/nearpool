@@ -6,8 +6,11 @@
     "dev": "vite",
     "start": "node server.mjs",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "esbuild tests/refFinance.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/nearpool/refFinance.test.cjs --define:import.meta.env={} --log-level=error && node node_modules/.cache/nearpool/refFinance.test.cjs"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
+    "test": "esbuild tests/refFinance.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/nearpool/refFinance.test.cjs --define:import.meta.env={} --log-level=error && node node_modules/.cache/nearpool/refFinance.test.cjs",
+    "cf:dev": "npm run build && wrangler dev",
+    "cf:deploy": "npm run build && wrangler deploy",
+    "cf:pages:deploy": "npm run build && wrangler pages deploy dist --project-name nearpool"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
@@ -36,6 +39,7 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260927.1",
     "@tailwindcss/vite": "^4.1.7",
     "@types/bn.js": "^5.2.0",
     "@types/canvas-confetti": "^1.6.4",
@@ -46,6 +50,7 @@
     "puppeteer": "^25.10.0",
     "tailwindcss": "^4.1.7",
     "typescript": "^5.7.0",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.142.0"
   }
 }

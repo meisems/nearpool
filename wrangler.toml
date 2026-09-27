@@ -1,0 +1,28 @@
+# Cloudflare Workers deployment (Workers + static assets).
+# See DEPLOY_CLOUDFLARE.md. For Cloudflare Pages, this file is ignored
+# (no pages_build_output_dir); Pages uses functions/ and dashboard bindings.
+name = "nearpool"
+main = "worker/index.ts"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# Create with: npx wrangler d1 create nearpool-activity
+# then paste the returned database_id below and run the migration.
+[[d1_databases]]
+binding = "DB"
+database_name = "nearpool-activity"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+NEAR_RPC_URL = "https://rpc.mainnet.near.org"
+NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com"
+REF_CONTRACT_ID = "v2.ref-finance.near"
+
+[observability]
+enabled = true
