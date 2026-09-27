@@ -10,310 +10,260 @@ const dist = join(root, "dist");
 const indexPath = join(dist, "index.html");
 const port = Number(process.env.PORT || 10000);
 const host = process.env.HOST || "0.0.0.0";
-const ponsSearchUrl = "https://www.ponsfamily.com/api/pons-launches/search";
-const rpcUpstreamUrl = "https://rpc.mainnet.chain.robinhood.com/";
-const activityManagers = new Set([
-  "0x73991a25c818bf1f1128deaab1492d45638de0d3",
-  "0x58daec3116aae6d93017baaea7749052e8a04fa7",
-]);
-const MAX_RPC_BODY_BYTES = 1_048_576;
-const explorerBase = (process.env.VITE_EXPLORER_URL || process.env.EXPLORER_URL || "https://robinhoodchain.blockscout.com").replace(/\/+$/, "");
+const MAX_BODY_BYTES = 16_384;
 
-// Shared, process-wide cache for read-only third-party data (on-chain
-// activity, prices). Every visitor's browser now calls these same-origin
-// endpoints instead of hitting the block explorer / CoinGecko / Dexscreener
-// directly, so all visitors converge on one authoritative, recently-fetched
-// snapshot instead of each browser's own (often stale or partially-blocked)
-// view. On an upstream failure we serve the last good cached response
-// instead of erroring out, so a transient rate limit never blanks the feed.
-const proxyCache = new Map();
+const REF_CONTRACT_ID = process.env.VITE_REF_CONTRACT_ID || "v2.ref-finance.near";
+const RPC_URLS = [
+  process.env.NEAR_RPC_URL || process.env.VITE_NEAR_RPC_URL || "https://rpc.mainnet.near.org",
+  ...(process.env.NEAR_FALLBACK_RPC_URLS || process.env.VITE_NEAR_FALLBACK_RPC_URLS || "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean),
+];
 
-const SEED_ACTIVITY_POST = {
-  hash: "0x8fa18c0096a512d55fa02afff2fde5de931af99c1d191e65ce921cf468c3dbd7",
-  user: "0x60821e7b238e39508db11abf142b57040c5a5a2e",
-  token: "0xab093dEF657F15dF31b33922A95e047aDd645B29",
-  symbol: "TOKEN",
-  version: "V3",
-  kind: "inject",
-  ethIn: "9900000000000",
-  tokenIn: "0",
-  minedAtBlock: 56105478,
-  timestamp: 1788710595,
-};
+/* ------------------------------------------------------------ NEAR RPC */
 
-// In-memory fallback only. This DOES NOT survive a process restart — and on
-// Render's free plan the instance spins down after ~15 minutes idle and
-// restarts fresh on the next request, wiping this Map back to just the seed
-// row above. That's why the public feed used to look different across
-// browsers/visits: whichever browser happened to load right after a cold
-// start saw an empty shared feed while transactions published before the
-// restart were gone for everyone, until new visitors slowly re-populated it.
-// Configure TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN for a remote database;
-// see .env.example) to back this with real durable storage instead; that
-// path is used whenever TURSO_DATABASE_URL is set, and this Map is only
-// ever a fallback for local dev.
-const activityPostsMemory = new Map([[SEED_ACTIVITY_POST.hash, SEED_ACTIVITY_POST]]);
+async function rpcCall(method, params) {
+  let lastError;
+  for (const url of RPC_URLS) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "nearpool", method, params }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const raw = await response.text();
+      let payload;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        throw new Error(`RPC ${new URL(url).host} responded ${response.status} with a non-JSON body`);
+      }
+      if (payload.error) {
+        const message = payload.error.cause?.name || payload.error.data || payload.error.message || "RPC error";
+        // Deterministic errors (unknown tx, bad args) won't improve on another node.
+        if (payload.error.name === "HANDLER_ERROR" || payload.error.name === "REQUEST_VALIDATION_ERROR") {
+          throw Object.assign(new Error(typeof message === "string" ? message : JSON.stringify(message)), { final: true });
+        }
+        throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+      }
+      if (!response.ok) throw new Error(`RPC responded ${response.status}`);
+      return payload.result;
+    } catch (error) {
+      lastError = error;
+      if (error?.final) break;
+    }
+  }
+  throw lastError;
+}
+
+async function viewCall(accountId, methodName, args = {}) {
+  const result = await rpcCall("query", {
+    request_type: "call_function",
+    finality: "final",
+    account_id: accountId,
+    method_name: methodName,
+    args_base64: Buffer.from(JSON.stringify(args)).toString("base64"),
+  });
+  const text = Buffer.from(result.result).toString("utf8");
+  return text ? JSON.parse(text) : null;
+}
+
+const metadataCache = new Map();
+async function ftMetadata(tokenId) {
+  if (!metadataCache.has(tokenId)) {
+    const promise = viewCall(tokenId, "ft_metadata").catch((error) => {
+      metadataCache.delete(tokenId);
+      throw error;
+    });
+    metadataCache.set(tokenId, promise);
+  }
+  return metadataCache.get(tokenId);
+}
+
+const BASE58_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
+const ACCOUNT_ID = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+const isAccountId = (value) => typeof value === "string" && value.length >= 2 && value.length <= 64 && ACCOUNT_ID.test(value);
+
+function statusFailed(status) {
+  return !status || typeof status !== "object" || "Failure" in status;
+}
+
+/**
+ * Re-derive an activity post from chain data: the transaction must be a
+ * fully successful add_liquidity on Ref Finance signed by `accountId`.
+ * Nothing displayed in the feed comes from the client.
+ */
+async function verifyInjection(hash, accountId) {
+  const outcome = await rpcCall("tx", { tx_hash: hash, sender_account_id: accountId, wait_until: "FINAL" });
+  const tx = outcome?.transaction;
+  if (!tx || tx.signer_id !== accountId || tx.receiver_id !== REF_CONTRACT_ID) {
+    throw Object.assign(new Error("not a Ref Finance transaction signed by this account"), { status: 400 });
+  }
+  if (statusFailed(outcome.status) || outcome.receipts_outcome.some((r) => statusFailed(r.outcome?.status))) {
+    throw Object.assign(new Error("transaction did not fully succeed"), { status: 400 });
+  }
+  const addLiquidity = [...(tx.actions || [])]
+    .reverse()
+    .map((action) => action?.FunctionCall)
+    .find((call) => call?.method_name === "add_liquidity");
+  if (!addLiquidity) throw Object.assign(new Error("transaction has no add_liquidity call"), { status: 400 });
+  const args = JSON.parse(Buffer.from(addLiquidity.args, "base64").toString("utf8"));
+  const poolId = Number(args.pool_id);
+  if (!Number.isSafeInteger(poolId) || poolId < 0) throw Object.assign(new Error("invalid pool id"), { status: 400 });
+
+  const pool = await viewCall(REF_CONTRACT_ID, "get_pool", { pool_id: poolId });
+  const tokenIds = pool.token_account_ids;
+  let amounts = (args.amounts || []).map(String);
+  let shares = "0";
+
+  // Ref logs `Liquidity added ["<amount> <token>", ...], minted <shares> shares` with the
+  // amounts it actually pulled; prefer those over the requested amounts.
+  for (const receipt of outcome.receipts_outcome) {
+    if (receipt.outcome.executor_id !== REF_CONTRACT_ID) continue;
+    for (const log of receipt.outcome.logs) {
+      const match = /^Liquidity added \[(.*)\], minted (\d+) shares/.exec(log);
+      if (!match) continue;
+      const added = [...match[1].matchAll(/"(\d+) ([^"]+)"/g)];
+      const byToken = new Map(added.map((m) => [m[2], m[1]]));
+      if (tokenIds.every((id) => byToken.has(id))) amounts = tokenIds.map((id) => byToken.get(id));
+      shares = match[2];
+    }
+  }
+  if (shares === "0" && outcome.status.SuccessValue) {
+    try {
+      const value = JSON.parse(Buffer.from(outcome.status.SuccessValue, "base64").toString("utf8"));
+      if (/^\d+$/.test(String(value))) shares = String(value);
+    } catch {
+      /* keep 0 */
+    }
+  }
+
+  const metas = await Promise.all(tokenIds.map((id) => ftMetadata(id).catch(() => null)));
+  const block = await rpcCall("block", { block_id: outcome.transaction_outcome.block_hash });
+  return {
+    hash,
+    accountId,
+    poolId,
+    tokenIds,
+    symbols: tokenIds.map((id, i) => (id === "wrap.near" ? "NEAR" : metas[i]?.symbol || id.split(".")[0].slice(0, 8))),
+    decimals: tokenIds.map((_, i) => (typeof metas[i]?.decimals === "number" ? metas[i].decimals : 24)),
+    amounts,
+    shares,
+    blockHeight: Number(block.header.height),
+    timestamp: Math.floor(Number(BigInt(block.header.timestamp_nanosec) / 1_000_000n)),
+  };
+}
+
+/* ------------------------------------------------------------ activity store */
+
+// In-memory fallback resets on every restart (e.g. Render free-tier spin
+// down). Set TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN) for durable storage.
+const activityMemory = new Map();
 
 const tursoUrl = process.env.TURSO_DATABASE_URL || "";
 const tursoToken = process.env.TURSO_AUTH_TOKEN || "";
 const turso = tursoUrl ? createClient({ url: tursoUrl, authToken: tursoToken || undefined }) : null;
 if (!turso) {
-  console.warn(
-    "TURSO_DATABASE_URL not set — the shared activity feed will use an " +
-    "in-memory store that resets on every restart/cold start. See " +
-    ".env.example for the durable-storage setup.",
-  );
+  console.warn("TURSO_DATABASE_URL not set — the shared activity feed uses an in-memory store that resets on restart.");
 } else {
-  // SQLite/libSQL, so this can just run on boot — no separate migration step.
-  await turso.execute(`create table if not exists activity_posts (
+  await turso.execute(`create table if not exists nearpool_activity (
     hash text primary key,
-    user text,
-    token text,
-    symbol text,
-    version text,
-    kind text,
-    eth_in text,
-    token_in text,
-    mined_at_block integer,
-    timestamp integer
+    account_id text not null,
+    pool_id integer not null,
+    token_ids text not null,
+    symbols text not null,
+    decimals text not null,
+    amounts text not null,
+    shares text not null,
+    block_height integer not null,
+    timestamp integer not null
   )`);
-  // Seed the one real, pre-existing confirmed transaction once, so it isn't
-  // silently missing just because this is a fresh database.
-  await turso.execute({
-    sql: `insert or ignore into activity_posts (hash, user, token, symbol, version, kind, eth_in, token_in, mined_at_block, timestamp)
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      SEED_ACTIVITY_POST.hash,
-      SEED_ACTIVITY_POST.user,
-      SEED_ACTIVITY_POST.token,
-      SEED_ACTIVITY_POST.symbol,
-      SEED_ACTIVITY_POST.version,
-      SEED_ACTIVITY_POST.kind,
-      SEED_ACTIVITY_POST.ethIn,
-      SEED_ACTIVITY_POST.tokenIn,
-      SEED_ACTIVITY_POST.minedAtBlock,
-      SEED_ACTIVITY_POST.timestamp,
-    ],
-  });
 }
 
-async function upsertActivityPost(post) {
+async function upsertActivity(post) {
   if (!turso) {
-    activityPostsMemory.set(post.hash.toLowerCase(), post);
-    while (activityPostsMemory.size > 100) activityPostsMemory.delete(activityPostsMemory.keys().next().value);
+    activityMemory.set(post.hash, post);
+    while (activityMemory.size > 100) activityMemory.delete(activityMemory.keys().next().value);
     return;
   }
   await turso.execute({
-    sql: `insert into activity_posts (hash, user, token, symbol, version, kind, eth_in, token_in, mined_at_block, timestamp)
+    sql: `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp)
           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          on conflict(hash) do update set
-            user=excluded.user, token=excluded.token, symbol=excluded.symbol,
-            version=excluded.version, kind=excluded.kind, eth_in=excluded.eth_in,
-            token_in=excluded.token_in, mined_at_block=excluded.mined_at_block, timestamp=excluded.timestamp`,
+          on conflict(hash) do nothing`,
     args: [
-      post.hash.toLowerCase(),
-      post.user,
-      post.token,
-      post.symbol,
-      post.version,
-      post.kind,
-      post.ethIn,
-      post.tokenIn,
-      post.minedAtBlock,
-      post.timestamp ?? null,
+      post.hash,
+      post.accountId,
+      post.poolId,
+      JSON.stringify(post.tokenIds),
+      JSON.stringify(post.symbols),
+      JSON.stringify(post.decimals),
+      JSON.stringify(post.amounts),
+      post.shares,
+      post.blockHeight,
+      post.timestamp,
     ],
   });
 }
 
-async function listActivityPosts(limit = 100) {
-  if (!turso) return [...activityPostsMemory.values()];
+async function listActivity(limit = 100) {
+  if (!turso) return [...activityMemory.values()].sort((a, b) => b.blockHeight - a.blockHeight).slice(0, limit);
+  const result = await turso.execute({ sql: "select * from nearpool_activity order by block_height desc limit ?", args: [limit] });
+  return result.rows.map((row) => ({
+    hash: String(row.hash),
+    accountId: String(row.account_id),
+    poolId: Number(row.pool_id),
+    tokenIds: JSON.parse(String(row.token_ids)),
+    symbols: JSON.parse(String(row.symbols)),
+    decimals: JSON.parse(String(row.decimals)),
+    amounts: JSON.parse(String(row.amounts)),
+    shares: String(row.shares),
+    blockHeight: Number(row.block_height),
+    timestamp: Number(row.timestamp),
+  }));
+}
+
+/* ------------------------------------------------------------ handlers */
+
+async function readRequestBody(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY_BYTES) throw new Error("request body too large");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+async function handleActivityPublish(req, res) {
+  let body;
   try {
-    const result = await turso.execute({
-      sql: `select * from activity_posts order by mined_at_block desc limit ?`,
-      args: [limit],
-    });
-    return result.rows.map((row) => ({
-      hash: row.hash,
-      user: row.user,
-      token: row.token,
-      symbol: row.symbol,
-      version: row.version,
-      kind: row.kind,
-      ethIn: row.eth_in,
-      tokenIn: row.token_in,
-      minedAtBlock: Number(row.mined_at_block),
-      timestamp: row.timestamp ?? undefined,
-    }));
-  } catch (error) {
-    console.error("turso select failed, falling back to seed row", error);
-    return [SEED_ACTIVITY_POST];
+    body = JSON.parse((await readRequestBody(req)).toString("utf8"));
+  } catch {
+    return sendJson(res, 400, { error: "invalid JSON body" });
   }
-}
-
-async function fetchWithCache(key, url, ttlMs, fallbackUrl) {
-  const cached = proxyCache.get(key);
-  const now = Date.now();
-  if (cached && now - cached.at < ttlMs) return { ...cached, stale: false };
+  const hash = typeof body?.hash === "string" && BASE58_HASH.test(body.hash) ? body.hash : "";
+  const accountId = isAccountId(body?.accountId) ? body.accountId : "";
+  if (!hash || !accountId) return sendJson(res, 400, { error: "a transaction hash and NEAR account id are required" });
   try {
-    let response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    // A stale/incorrect Blockscout PRO key must not blank the public activity
-    // feed. Retry the same query against the configured public explorer.
-    if ((response.status === 401 || response.status === 403) && fallbackUrl) {
-      response = await fetch(fallbackUrl, { signal: AbortSignal.timeout(15_000) });
-    }
-    if (!response.ok) throw new Error(`upstream responded ${response.status}`);
-    const body = await response.text();
-    const contentType = response.headers.get("content-type") || "application/json; charset=utf-8";
-    if (/text\/html/i.test(contentType) || /^\s*<!doctype html/i.test(body)) throw new Error("explorer returned HTML instead of JSON");
-    const entry = { at: now, body, contentType };
-    proxyCache.set(key, entry);
-    return { ...entry, stale: false };
+    const post = await verifyInjection(hash, accountId);
+    await upsertActivity(post);
+    return sendJson(res, 200, { ok: true, post });
   } catch (error) {
-    console.error(`Proxy request failed (${key})`, error);
-    if (cached) return { ...cached, stale: true };
-    throw error;
+    const status = error?.status || (error?.final ? 400 : 502);
+    return sendJson(res, status, { error: "could not publish transaction", detail: String(error?.message || error) });
   }
 }
 
-async function rpcCall(method, params) {
-  const response = await fetch(rpcUpstreamUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.error) throw new Error(payload.error?.message || `RPC responded ${response.status}`);
-  return payload.result;
-}
-
-async function handleProxy(res, key, url, ttlMs, fallbackUrl, suppressError = false) {
+async function handleActivityPosts(res) {
   try {
-    const result = await fetchWithCache(key, url, ttlMs, fallbackUrl);
-    res.writeHead(200, {
-      "content-type": result.contentType,
-      "cache-control": "no-store",
-      "x-ponspool-cache": result.stale ? "stale" : "fresh",
-    });
-    res.end(result.body);
-    return true;
+    return sendJson(res, 200, { posts: await listActivity(100) });
   } catch (error) {
-    if (!suppressError) {
-      // Surface the real upstream failure (rate limit, auth, timeout, etc.).
-      sendJson(res, 502, { error: "upstream temporarily unavailable", detail: String(error?.message || error) });
-    }
-    return false;
+    console.error("could not list activity posts", error);
+    return sendJson(res, 200, { posts: [] });
   }
-}
-
-// Optional Blockscout PRO API key (server-side only — never exposed to the
-// client). Blockscout's free anonymous instance API is tightly rate-limited
-// (5 RPS) and this app polls two addresses on every visitor's screen, so a
-// key raises that ceiling substantially. Get one free at dev.blockscout.com.
-const blockscoutApiKey = process.env.BLOCKSCOUT_API_KEY || "";
-const blockscoutChainId = process.env.VITE_CHAIN_ID || process.env.CHAIN_ID || "4663";
-
-async function handleExplorerProxy(req, res, url) {
-  const address = url.searchParams.get("address");
-  if (!address) return sendJson(res, 400, { error: "address is required" });
-  const upstream = blockscoutApiKey
-    ? new URL("https://api.blockscout.com/v2/api")
-    : new URL(`${explorerBase}/api`);
-  if (blockscoutApiKey) {
-    upstream.searchParams.set("chain_id", blockscoutChainId);
-    upstream.searchParams.set("apikey", blockscoutApiKey);
-  }
-  upstream.searchParams.set("module", url.searchParams.get("module") || "account");
-  upstream.searchParams.set("action", url.searchParams.get("action") || "txlist");
-  upstream.searchParams.set("address", address);
-  upstream.searchParams.set("startblock", url.searchParams.get("startblock") || "0");
-  // Deliberately NOT forwarding the client's exact endblock. Robinhood
-  // Chain has ~0.1s block times, so a precise current-head endblock changes
-  // on almost every single poll — that busted the shared cache below (every
-  // request got a unique key, so every visitor's poll hit Blockscout fresh
-  // instead of sharing one recent snapshot) and helped trigger rate-limit
-  // 502s. "latest" is accepted by the Etherscan-compatible API and keeps
-  // the cache key stable across an entire TTL window.
-  upstream.searchParams.set("endblock", "latest");
-  upstream.searchParams.set("page", "1");
-  upstream.searchParams.set("offset", "1000");
-  upstream.searchParams.set("sort", url.searchParams.get("sort") || "desc");
-  const key = `explorer:${upstream.searchParams.toString()}`;
-  const fallback = new URL(`${explorerBase}/api`);
-  for (const [name, value] of upstream.searchParams) {
-    if (name !== "apikey" && name !== "chain_id") fallback.searchParams.set(name, value);
-  }
-  // 12s cache: comfortably below the 15s client poll interval so every
-  // browser polling at once still shares one upstream request.
-  const served = await handleProxy(res, key, upstream.toString(), 12_000, blockscoutApiKey ? fallback.toString() : undefined, true);
-  if (!served) {
-    if (!activityManagers.has(address.toLowerCase())) {
-      return sendJson(res, 502, { error: "upstream temporarily unavailable" });
-    }
-    // If both Blockscout routes are unavailable, recover position-manager
-    // activity directly from Robinhood RPC. This keeps the public feed global
-    // instead of falling back to each visitor's localStorage snapshot.
-    if (!activityManagers.has(address.toLowerCase())) throw error;
-    try {
-      const latest = Number(BigInt(await rpcCall("eth_blockNumber", [])));
-      const requestedStart = Number(BigInt(url.searchParams.get("startblock") || "0"));
-      const requestedEnd = Number(BigInt(url.searchParams.get("endblock") || latest));
-      const from = Math.max(requestedStart, requestedEnd - 1_000);
-      const to = Math.min(requestedEnd, latest);
-      const logs = await rpcCall("eth_getLogs", [{
-        address,
-        fromBlock: `0x${from.toString(16)}`,
-        toBlock: `0x${to.toString(16)}`,
-      }]);
-      // Keep the fallback cheap enough for the public RPC. Older confirmed
-      // rows are retained in the feed snapshot; this path is for recent
-      // activity while the explorer is unavailable.
-      const hashes = [...new Set((logs || []).map((log) => log.transactionHash).filter(Boolean))].slice(-300);
-      const transactions = [];
-      for (let index = 0; index < hashes.length; index += 8) {
-        const batch = await Promise.all(hashes.slice(index, index + 8).map((hash) => rpcCall("eth_getTransactionByHash", [hash])));
-        transactions.push(...batch);
-      }
-      const result = [];
-      for (const tx of transactions) {
-        if (!tx) continue;
-        result.push({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to,
-          input: tx.input,
-          value: tx.value,
-          blockNumber: String(Number(BigInt(tx.blockNumber))),
-          timeStamp: "0",
-          isError: "0",
-        });
-      }
-      result.sort((a, b) => Number(b.blockNumber) - Number(a.blockNumber));
-      sendJson(res, 200, { status: "1", message: "OK", result });
-    } catch (rpcError) {
-      console.error("Direct activity RPC fallback failed", rpcError);
-      sendJson(res, 502, { error: "upstream activity unavailable", detail: String(rpcError?.message || rpcError) });
-    }
-  }
-}
-
-async function handleEthPriceProxy(req, res) {
-  await handleProxy(
-    res,
-    "price:eth",
-    "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
-    30_000,
-  );
-}
-
-async function handlePonsPriceProxy(req, res, token) {
-  if (!token) return sendJson(res, 400, { error: "token address is required" });
-  await handleProxy(
-    res,
-    `price:pons:${token.toLowerCase()}`,
-    `https://api.dexscreener.com/latest/dex/tokens/${token}`,
-    30_000,
-  );
 }
 
 const contentTypes = {
@@ -348,111 +298,11 @@ function safeDistPath(urlPath) {
   return candidate === dist || candidate.startsWith(`${dist}${sep}`) ? candidate : null;
 }
 
-async function readRequestBody(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_RPC_BODY_BYTES) throw new Error("request body too large");
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
-
-async function handleRpc(req, res) {
-  try {
-    const body = await readRequestBody(req);
-    const response = await fetch(rpcUpstreamUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body,
-      signal: AbortSignal.timeout(15_000),
-    });
-    const responseBody = Buffer.from(await response.arrayBuffer());
-    res.writeHead(response.status, {
-      "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    });
-    res.end(responseBody);
-  } catch (error) {
-    console.error("Robinhood RPC proxy failed", error);
-    sendJson(res, 502, { error: "Robinhood Chain RPC is temporarily unavailable" });
-  }
-}
-
-async function handlePonsSearch(req, res, url) {
-  const upstream = new URL(ponsSearchUrl);
-  for (const key of ["q", "sort", "age", "page", "quote"]) {
-    const value = url.searchParams.get(key);
-    if (value !== null) upstream.searchParams.set(key, value);
-  }
-  if (!upstream.searchParams.has("sort")) upstream.searchParams.set("sort", "latest");
-  if (!upstream.searchParams.has("age")) upstream.searchParams.set("age", "all");
-  if (!upstream.searchParams.has("page")) upstream.searchParams.set("page", "1");
-
-  try {
-    const response = await fetch(upstream, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(15_000),
-    });
-    const body = await response.text();
-    res.writeHead(response.status, {
-      "content-type": response.headers.get("content-type") || "application/json; charset=utf-8",
-      "cache-control": "public, max-age=10, stale-while-revalidate=30",
-    });
-    res.end(body);
-  } catch (error) {
-    console.error("Pons launch search proxy failed", error);
-    sendJson(res, 502, { error: "Pons launch search is temporarily unavailable" });
-  }
-}
-
-async function handleActivityPublish(req, res) {
-  try {
-    const body = JSON.parse((await readRequestBody(req)).toString("utf8"));
-    const hash = typeof body.hash === "string" && /^0x[a-fA-F0-9]{64}$/.test(body.hash) ? body.hash : "";
-    if (!hash) return sendJson(res, 400, { error: "valid transaction hash is required" });
-    const tx = await rpcCall("eth_getTransactionByHash", [hash]);
-    const receipt = await rpcCall("eth_getTransactionReceipt", [hash]);
-    if (!tx || !receipt || receipt.status !== "0x1" || !activityManagers.has(String(tx.to || "").toLowerCase())) {
-      return sendJson(res, 400, { error: "transaction is not a confirmed position-manager transaction" });
-    }
-    const block = await rpcCall("eth_getBlockByNumber", [receipt.blockNumber, false]);
-    const token = typeof body.token === "string" ? body.token : "";
-    if (!/^0x[a-fA-F0-9]{40}$/.test(token)) return sendJson(res, 400, { error: "valid token address is required" });
-    const post = {
-      hash,
-      user: tx.from,
-      token,
-      symbol: typeof body.symbol === "string" ? body.symbol : "TOKEN",
-      version: body.version === "V3" ? "V3" : "V4",
-      kind: body.mode === "zap" ? "zap" : "inject",
-      ethIn: String(body.ethIn || "0"),
-      tokenIn: "0",
-      minedAtBlock: Number(BigInt(receipt.blockNumber)),
-      timestamp: Number(BigInt(block?.timestamp || "0")) || undefined,
-    };
-    await upsertActivityPost(post);
-    return sendJson(res, 200, { ok: true, post });
-  } catch (error) {
-    return sendJson(res, 400, { error: "could not publish transaction", detail: String(error?.message || error) });
-  }
-}
-
-async function handleActivityPosts(res) {
-  try {
-    return sendJson(res, 200, { posts: await listActivityPosts(100) });
-  } catch (error) {
-    console.error("could not list activity posts", error);
-    return sendJson(res, 200, { posts: [SEED_ACTIVITY_POST] });
-  }
-}
-
 async function handleStatic(req, res, url) {
   let path = safeDistPath(url.pathname);
   if (!path) return sendJson(res, 400, { error: "invalid path" });
   // BrowserRouter owns extensionless client routes. Serve the SPA shell for
-  // direct navigation and refreshes such as /launch-pool or /buy.
+  // direct navigation and refreshes such as /inject or /swap.
   if (!existsSync(path) && !extname(url.pathname)) path = indexPath;
   try {
     const body = await readFile(path);
@@ -477,19 +327,12 @@ async function handleStatic(req, res, url) {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-  if (req.method === "POST" && url.pathname === "/api/rpc") return handleRpc(req, res);
-  if (req.method === "GET" && url.pathname === "/api/pons-launches/search") return handlePonsSearch(req, res, url);
   if (req.method === "POST" && url.pathname === "/api/activity/publish") return handleActivityPublish(req, res);
   if (req.method === "GET" && url.pathname === "/api/activity/posts") return handleActivityPosts(res);
-  if (req.method === "GET" && url.pathname === "/api/explorer") return handleExplorerProxy(req, res, url);
-  if (req.method === "GET" && url.pathname === "/api/price/eth") return handleEthPriceProxy(req, res);
-  if (req.method === "GET" && url.pathname.startsWith("/api/price/pons/")) {
-    return handlePonsPriceProxy(req, res, decodeURIComponent(url.pathname.slice("/api/price/pons/".length)));
-  }
   if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
   return handleStatic(req, res, url);
 });
 
 server.listen(port, host, () => {
-  console.log(`ponspool server listening on http://${host}:${port}`);
+  console.log(`nearpool server listening on http://${host}:${port}`);
 });

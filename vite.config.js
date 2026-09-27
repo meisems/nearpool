@@ -2,8 +2,6 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const rpcUpstream = "https://rpc.mainnet.chain.robinhood.com";
-
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
@@ -13,12 +11,10 @@ export default defineConfig({
     hmr: {
       port: 3000,
     },
-    proxy: {
-      "/api/rpc": {
-        target: rpcUpstream,
-        changeOrigin: true,
-        rewrite: () => "/",
-      },
-    },
+    // The shared activity feed lives in server.mjs. Run `npm run build && npm start`
+    // alongside `npm run dev` and point this at it to exercise the feed locally.
+    proxy: process.env.NEARPOOL_API_ORIGIN
+      ? { "/api": { target: process.env.NEARPOOL_API_ORIGIN, changeOrigin: true } }
+      : undefined,
   },
 });

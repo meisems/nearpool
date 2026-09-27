@@ -1,13 +1,15 @@
+import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { InjectionReceipt } from "../hooks/useContractInjection";
-import { DEAD_ADDRESS, EXPLORER_URL, PLATFORM_TOKEN_SYMBOL } from "../lib/constants";
-import { fmtWei, shortAddr } from "../lib/format";
+import type { InjectionReceipt } from "../hooks/useNearInjection";
+import { explorerTxUrl, NEAR_DECIMALS, refPoolUrl } from "../config/near";
+import { fmtAmount, shortHash } from "../lib/format";
+import { LP_SHARE_DECIMALS } from "../utils/zapMath";
 import { TokenAvatar } from "./TokenAvatar";
-import { IconCheck, IconExternal, IconFlame, IconNft, IconX } from "./icons";
+import { IconCheck, IconDropletPlus, IconExternal, IconX } from "./icons";
 
 const spring = { type: "spring", damping: 15, stiffness: 200 } as const;
 
-function ExplorerLink({ href, children }: { href: string; children: React.ReactNode }) {
+function ExplorerLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
       href={href}
@@ -21,23 +23,24 @@ function ExplorerLink({ href, children }: { href: string; children: React.ReactN
   );
 }
 
+export interface TokenDisplay {
+  symbol: string;
+  decimals: number;
+}
+
 export function CompletionModal({
   receipt,
-  tokenSymbol,
-  tokenDecimals,
+  tokens,
   onClose,
 }: {
   receipt: InjectionReceipt | null;
-  tokenSymbol: string;
-  tokenDecimals: number;
+  /** Display metadata in pool token order. */
+  tokens: TokenDisplay[];
   onClose: () => void;
 }) {
-  const open = !!receipt;
-  const versionLabel = receipt ? receipt.version.toLowerCase() : "";
-
   return (
     <AnimatePresence>
-      {open && receipt && (
+      {receipt && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -63,13 +66,11 @@ export function CompletionModal({
                   transition={{ ...spring, delay: 0.15 }}
                   className="flex h-9 w-9 items-center justify-center rounded-full bg-accentsoft text-accent"
                 >
-                  {receipt.mode === "zap" ? <IconFlame size={16} /> : <IconCheck size={17} />}
+                  <IconCheck size={17} />
                 </motion.span>
                 <div>
-                  <div className="font-display text-base font-semibold text-ink">
-                    ETH-only liquidity deployed.
-                  </div>
-                  <div className="text-[11px] text-muted">the pond is thicker. you did that.</div>
+                  <div className="font-display text-base font-semibold text-ink">liquidity injected.</div>
+                  <div className="text-[11px] text-muted">Ref pool #{receipt.poolId} is deeper. you did that.</div>
                 </div>
               </div>
               <button onClick={onClose} className="rounded-full p-1.5 text-faint transition-colors hover:bg-card2 hover:text-ink">
@@ -77,91 +78,51 @@ export function CompletionModal({
               </button>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-coin/25 bg-coinsoft px-3.5 py-3">
-              <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-coin uppercase">
-                <IconFlame size={13} />
-                position burned permanently
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <span className="font-mono text-[9.5px] text-muted">
-                  sent to the unrecoverable burn address
-                </span>
-                <a href={`${EXPLORER_URL}/tx/${receipt.txHash}`} target="_blank" rel="noreferrer" className="flex shrink-0 items-center gap-1 font-mono text-[9.5px] font-medium text-ink hover:underline">
-                  view tx <IconExternal size={10} />
-                </a>
-              </div>
-            </div>
-
-            {/* position nft chip */}
             <div className="mt-4 flex items-center justify-between rounded-2xl bg-accentsoft/70 px-3.5 py-3">
               <span className="flex items-center gap-2 text-xs font-medium text-accentstrong">
-                <IconNft size={14} />
-                {versionLabel} position nft
+                <IconDropletPlus size={14} />
+                LP shares minted
               </span>
               <span className="font-mono text-sm font-bold text-accentstrong tabular">
-                #{receipt.positionId?.toString() ?? "—"}
+                {fmtAmount(receipt.sharesMinted, LP_SHARE_DECIMALS)}
               </span>
             </div>
 
             <div className="mt-2 space-y-2">
-              <div className="flex items-center justify-between rounded-2xl bg-card2/60 px-3.5 py-3">
-                <span className="text-xs text-muted">eth injected into pool depth</span>
-                <span className="font-mono text-sm font-semibold text-ink tabular">+{fmtWei(receipt.ethInjected, 18)} ETH</span>
-              </div>
-              <div className="flex items-center justify-between rounded-2xl bg-card2/60 px-3.5 py-3">
-                <span className="flex items-center gap-2.5 text-xs text-muted">
-                  <TokenAvatar address={receipt.token as `0x${string}`} symbol={tokenSymbol} size={26} />
-                  single-sided Uniswap liquidity
-                </span>
-                <span className="font-mono text-sm font-semibold text-ink tabular">
-                  0 {tokenSymbol} · ETH only
-                </span>
-              </div>
+              {receipt.tokenIds.map((tokenId, i) => (
+                <div key={tokenId} className="flex items-center justify-between rounded-2xl bg-card2/60 px-3.5 py-3">
+                  <span className="flex items-center gap-2.5 text-xs text-muted">
+                    <TokenAvatar tokenId={tokenId} size={26} />
+                    {tokens[i]?.symbol ?? tokenId} added
+                  </span>
+                  <span className="font-mono text-sm font-semibold text-ink tabular">
+                    ~{fmtAmount(receipt.usedAmounts[i] ?? 0n, tokens[i]?.decimals ?? 24)} {tokens[i]?.symbol ?? ""}
+                  </span>
+                </div>
+              ))}
+              {receipt.wrapped > 0n && (
+                <p className="px-1 font-mono text-[9.5px] text-faint">
+                  wrapped {fmtAmount(receipt.wrapped, NEAR_DECIMALS)} NEAR → wNEAR on the way in
+                </p>
+              )}
             </div>
 
-            {/* on-chain incineration receipt */}
-            {receipt.burnedPons > 0n && (
-              <div className="mt-2 rounded-2xl border border-coin/25 bg-coinsoft px-3.5 py-3">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 font-mono text-[10px] tracking-[0.12em] text-coin uppercase">
-                    <IconFlame size={12} /> fee vault burn allocation
-                  </span>
-                  <span className="font-mono text-xs font-bold text-coin tabular">
-                    {fmtWei(receipt.burnedPons, 18)} ETH allocation
-                  </span>
-                </div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="font-mono text-[9.5px] text-muted">
-                    protocol cut · routed to the fee vault · represented as burned
-                  </span>
-                  <a
-                    href={`${EXPLORER_URL}/tx/${receipt.txHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 font-mono text-[9.5px] font-medium text-coin hover:underline"
-                  >
-                    verify <IconExternal size={10} />
-                  </a>
-                </div>
-              </div>
-            )}
-            {receipt.feeEth === 0n && (
-              <p className="mt-2 text-center font-mono text-[9.5px] text-faint">
-                holder tier honored · 0.0000 eth cut · verified by the fee vault flow
-              </p>
-            )}
-
             <div className="mt-3 space-y-2">
-              <ExplorerLink href={`${EXPLORER_URL}/tx/${receipt.txHash}`}>
-                {receipt.mode === "zap" ? "atomic zap tx" : "injection tx"} · {shortAddr(receipt.txHash)}
-              </ExplorerLink>
-              <ExplorerLink href={`${EXPLORER_URL}/address/${receipt.pair}`}>
-                pool · position backing · {shortAddr(receipt.pair)}
-              </ExplorerLink>
+              {receipt.txHash && (
+                <ExplorerLink href={explorerTxUrl(receipt.txHash)}>add_liquidity tx · {shortHash(receipt.txHash)}</ExplorerLink>
+              )}
+              {receipt.txHashes
+                .filter((hash) => hash !== receipt.txHash)
+                .map((hash, i) => (
+                  <ExplorerLink key={hash} href={explorerTxUrl(hash)}>
+                    setup tx {i + 1} · {shortHash(hash)}
+                  </ExplorerLink>
+                ))}
+              <ExplorerLink href={refPoolUrl(receipt.poolId)}>pool #{receipt.poolId} on Ref Finance</ExplorerLink>
             </div>
 
             <p className="mt-4 text-center font-mono text-[9.5px] text-faint">
-              sealed on robinhood chain · 4663 · non-custodial, as always
+              sealed on NEAR mainnet · LP shares stay in your Ref account · non-custodial
             </p>
           </motion.div>
         </motion.div>

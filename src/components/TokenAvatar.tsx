@@ -1,27 +1,15 @@
 import { memo, useState } from "react";
-import { getAddress } from "viem";
-import { PONSPOOL_LOGO_URL, PLATFORM_TOKEN_ADDRESS, WETH_ADDRESS } from "../lib/constants";
-import { IconEth } from "./icons";
-
-const CHAINS: Record<string, string> = { "1": "ethereum", "4663": "robinhood-chain" };
-const TRUST = (chain: string, addr: string) =>
-  `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${chain}/assets/${getAddress(addr)}/logo.png`;
-const PONSFAMILY_ORIGIN = "https://www.ponsfamily.com";
-
-function launchpadLogo(uri?: string): string | null {
-  if (!uri) return null;
-  if (/^https?:\/\//i.test(uri)) return uri;
-  const cid = uri.replace(/^ipfs:\/\//i, "").replace(/^ipfs\//i, "");
-  return cid ? `${PONSFAMILY_ORIGIN}/api/ipfs/content/${cid}?variant=card` : null;
-}
+import { WRAP_NEAR_CONTRACT_ID } from "../config/near";
+import { useFtMetadata } from "../hooks/useRefData";
+import { IconNear } from "./icons";
 
 function hueOf(s: string): number {
   let h = 0;
-  for (let i = 2; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return h % 360;
 }
 
-/* Clean on-chain-style identicon — three stacked soft bars. */
+/* Clean identicon — three stacked soft bars seeded from the token account ID. */
 function Identicon({ seed, size }: { seed: string; size: number }) {
   const h = hueOf(seed);
   const n1 = hueOf(seed + "a");
@@ -36,81 +24,49 @@ function Identicon({ seed, size }: { seed: string; size: number }) {
   );
 }
 
-function LetterAvatar({ symbol, size }: { symbol: string; size: number }) {
-  const h = hueOf(symbol.toLowerCase());
-  return (
-    <span
-      className="flex items-center justify-center rounded-full font-display font-semibold"
-      style={{
-        width: size,
-        height: size,
-        fontSize: size * 0.44,
-        background: `linear-gradient(135deg, hsl(${h} 42% 84%), hsl(${(h + 40) % 360} 40% 72%))`,
-        color: `hsl(${h} 45% 26%)`,
-      }}
-    >
-      {symbol.slice(0, 1).toUpperCase()}
-    </span>
-  );
+/** Only render icons that can't execute script: data:image/* (non-SVG or SVG in <img>) and https URLs. */
+function safeIcon(icon: string | null | undefined): string | null {
+  if (!icon) return null;
+  if (/^data:image\//i.test(icon)) return icon;
+  if (/^https:\/\//i.test(icon)) return icon;
+  if (/^ipfs:\/\//i.test(icon)) return `https://ipfs.io/ipfs/${icon.slice(7)}`;
+  return null;
 }
 
 /**
- * Real token logo with a clean fallback chain:
- * official $PONSPOOL asset -> launchpad URI -> Trust Wallet -> identicon -> lettermark.
+ * NEP-141 token logo. NEAR / wNEAR renders the NEAR mark; everything else
+ * uses the icon from the token's own `ft_metadata`, falling back to a
+ * deterministic identicon. Icons are rendered via <img>, which never runs
+ * script even for SVG data URIs.
  */
 export const TokenAvatar = memo(function TokenAvatar({
-  address,
-    symbol = "?",
+  tokenId,
+  icon,
   size = 24,
-  chainId = "4663",
   className = "",
-  logo,
 }: {
-  address?: string;
-  symbol?: string;
+  /** NEP-141 contract ID. Omit for native NEAR. */
+  tokenId?: string;
+  /** Icon override; when omitted it is read from `ft_metadata`. */
+  icon?: string | null;
   size?: number;
-  chainId?: string;
   className?: string;
-  /** Logo URI returned by the token contract's logo() method. */
-  logo?: string;
 }) {
-  const [failed, setFailed] = useState<string[]>([]);
-  const key = `${address ?? ""}|${symbol}|${size}|${logo ?? ""}`;
-  const [cacheKey, setCacheKey] = useState(key);
-  if (key !== cacheKey) {
-    setCacheKey(key);
-    setFailed([]);
-  }
-
-  const isEth = !address || address.toLowerCase() === WETH_ADDRESS.toLowerCase();
-  const isPons = !!address && address.toLowerCase() === PLATFORM_TOKEN_ADDRESS.toLowerCase();
-
+  const isNear = !tokenId || tokenId === WRAP_NEAR_CONTRACT_ID;
+  const meta = useFtMetadata(!isNear && icon === undefined ? tokenId : null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const wrap = `inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full ${className}`;
 
-  if (isEth) {
+  if (isNear) {
     return (
-      <span
-        className={`${wrap} bg-gradient-to-br from-[#8fa8c8] to-[#5f7ba3] text-white dark:from-[#5b7396] dark:to-[#3c5170]`}
-        style={{ width: size, height: size }}
-      >
-        <IconEth size={Math.round(size * 0.6)} />
+      <span className={`${wrap} bg-ink text-canvas`} style={{ width: size, height: size }}>
+        <IconNear size={Math.round(size * 0.62)} />
       </span>
     );
   }
 
-  const addr = address!.toLowerCase();
-  const trust = TRUST(CHAINS[chainId] ?? "ethereum", address!);
-  const official = isPons ? PONSPOOL_LOGO_URL : null;
-  const launchpad = launchpadLogo(logo);
-  const src = !failed.includes("official") && official
-    ? official
-    : !failed.includes("launchpad") && launchpad
-      ? launchpad
-      : !failed.includes("trust")
-        ? trust
-        : null;
-
-  if (src) {
+  const src = safeIcon(icon === undefined ? meta.data?.icon : icon);
+  if (src && src !== failedSrc) {
     return (
       <span className={wrap} style={{ width: size, height: size, background: "var(--card-2)" }}>
         <img
@@ -121,22 +77,15 @@ export const TokenAvatar = memo(function TokenAvatar({
           className="block h-full w-full object-cover"
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => {
-            const tag = official && src === official ? "official" : launchpad && src === launchpad ? "launchpad" : "trust";
-            setFailed((f) => (f.includes(tag) ? f : [...f, tag]));
-          }}
+          onError={() => setFailedSrc(src)}
         />
       </span>
     );
   }
 
-  if (symbol && symbol !== "?" && !failed.includes("identicon")) {
-    return (
-      <span className={wrap} style={{ width: size, height: size }}>
-        <Identicon seed={addr} size={size} />
-      </span>
-    );
-  }
-
-  return <LetterAvatar symbol={symbol || "?"} size={size} />;
+  return (
+    <span className={wrap} style={{ width: size, height: size }}>
+      <Identicon seed={tokenId} size={size} />
+    </span>
+  );
 });

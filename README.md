@@ -1,2 +1,68 @@
-# ponspool
-ponspool liquidity
+# nearpool
+
+Non-custodial liquidity-pool injector for [Ref Finance](https://app.ref.finance) on NEAR mainnet.
+Pick a common pair or any Ref pool id, type one side, and nearpool sizes the counter asset from
+live reserves, then batches every step into a single wallet approval:
+
+1. **Checking storage** — NEP-145 registrations for you and Ref on both tokens, Ref account
+   storage (register / top up) and `register_tokens` for non-whitelisted tokens.
+2. **Wrapping NEAR** — `near_deposit` on `wrap.near`, only for the shortfall your wNEAR and Ref
+   balances don't cover.
+3. **Depositing to Ref** — `ft_transfer_call` per token (50 TGas, 1 yoctoNEAR). Existing Ref
+   deposits are spent first.
+4. **Injecting LP** — `add_liquidity` on `v2.ref-finance.near` (100 TGas) with slippage-guarded
+   `min_amounts`.
+
+A second page offers single-hop Ref instant swaps for sourcing the counter asset.
+
+## Stack
+
+- React 18 + Vite + Tailwind v4 + Framer Motion
+- `@near-wallet-selector` (Meteor, HERE, Nightly, Sender) with `modal-ui`
+- `near-api-js` failover RPC provider for reads
+- Native `bigint` fixed-point math everywhere (no floats in transaction amounts)
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/config/near.ts` | Network, contract IDs, RPC fallbacks, gas and storage constants, common pairs |
+| `src/context/NearWalletContext.tsx` | Wallet selector provider: `selector`, `modal`, `accounts`, `accountId`, `wallet`, `signIn`, `signOut`, `viewMethod`, `signAndSendTransactions` |
+| `src/lib/near.ts` | RPC provider, `viewMethod`, native balance, execution-outcome parsing |
+| `src/lib/refFinance.ts` | Ref view calls, on-chain pool discovery, injection/swap planners, error mapping |
+| `src/utils/zapMath.ts` | Proportional quoting, share estimation, slippage, swap output — mirrors Ref's integer math |
+| `src/hooks/useNearInjection.ts` | Pipeline state machine; observes progress on-chain and verifies every receipt |
+| `src/hooks/useRefSwap.ts` | Instant swap execution |
+| `server.mjs` | Static hosting + shared activity feed (each post re-verified against NEAR RPC) |
+
+## Development
+
+```bash
+npm install
+npm run dev        # http://localhost:3000
+npm test           # math + transaction-planner checks
+npm run typecheck
+npm run build && npm start   # production server on :10000 (serves dist/ + /api/activity)
+```
+
+### Environment (all optional)
+
+| Variable | Default |
+| --- | --- |
+| `VITE_NEAR_RPC_URL` | `https://rpc.mainnet.near.org` |
+| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
+| `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
+| `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
+| `VITE_EXPLORER_URL` | `https://nearblocks.io` |
+| `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | unset → in-memory activity feed (server only) |
+
+## Notes
+
+- Only Ref **simple pools** with two tokens are supported; stable/rated pools use a different
+  `add_stable_liquidity` flow.
+- First-time LPs attach 0.01 NEAR to `add_liquidity` so Ref can store the new share record; Ref
+  refunds whatever it doesn't use. Existing LPs attach exactly 1 yoctoNEAR.
+- LP shares live in your Ref account. Rounding dust from `add_liquidity` stays in your Ref deposit
+  and is spent first on the next injection.
+
+The pre-migration EVM (Robinhood Chain / Uniswap) reports are archived in `docs/legacy-evm/`.

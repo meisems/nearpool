@@ -4,8 +4,7 @@ import { CreatorTerminal } from "../components/CreatorTerminal";
 import { Hero, ProtocolStrip, TransactionFeed } from "../components/Landing";
 import { SwapCard } from "../components/SwapCard";
 import { TokenAvatar } from "../components/TokenAvatar";
-import { IconArrowRight, IconShield, IconZap } from "../components/icons";
-import { PONSPOOL_TOKEN_ADDRESS } from "../lib/constants";
+import { IconArrowRight, IconDropletPlus, IconShield, IconSwap, IconZap } from "../components/icons";
 
 function PageHeader({ eyebrow, title, body }: { eyebrow: string; title: ReactNode; body: ReactNode }) {
   return (
@@ -20,10 +19,10 @@ function PageHeader({ eyebrow, title, body }: { eyebrow: string; title: ReactNod
   );
 }
 
-export function LandingPage({ onLaunch, onBuy }: { onLaunch: () => void; onBuy: () => void }) {
+export function LandingPage({ onInject, onSwap }: { onInject: () => void; onSwap: () => void }) {
   return (
     <div>
-      <Hero onLaunch={onLaunch} onBuy={onBuy} />
+      <Hero onInject={onInject} onSwap={onSwap} />
       <TransactionFeed />
       <ProtocolStrip />
 
@@ -31,13 +30,13 @@ export function LandingPage({ onLaunch, onBuy }: { onLaunch: () => void; onBuy: 
         <Link to="/docs" className="group rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft) transition-transform hover:-translate-y-1">
           <span className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">start here</span>
           <h2 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">Read the protocol docs</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">Understand the router, holder tier, liquidity destinations, and the assumptions behind the pond.</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted">Understand storage registration, the Ref deposit model, the exact calls in each batch, and the math behind min_amounts.</p>
           <span className="mt-5 flex items-center gap-2 text-xs font-semibold text-accent">open docs <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
         </Link>
         <Link to="/how-it-works" className="group rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft) transition-transform hover:-translate-y-1">
           <span className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">three moves</span>
-          <h2 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">See how the pond works</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">A short walkthrough for token creators and holders, from connecting a wallet to locking or burning LP.</p>
+          <h2 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">See how the pool works</h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">A short walkthrough from connecting a NEAR wallet to holding Ref LP shares.</p>
           <span className="mt-5 flex items-center gap-2 text-xs font-semibold text-accent">how it works <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
         </Link>
       </section>
@@ -45,25 +44,26 @@ export function LandingPage({ onLaunch, onBuy }: { onLaunch: () => void; onBuy: 
   );
 }
 
-export function LaunchPoolPage({ onBuy, onConnect }: { onBuy: () => void; onConnect: () => void }) {
+export function InjectPage({ onSwap }: { onSwap: () => void }) {
   return (
     <div>
       <PageHeader
-        eyebrow="launch pool · non-custodial"
-        title={<>Seed a pool.<br /><span className="text-accent">Keep sovereignty.</span></>}
-        body={<>The launch pool terminal creates a single-sided Uniswap liquidity position using only Robinhood ETH. The selected token identifies the pool; no creator-token transfer is required. Every LP position is burned permanently.</>}
+        eyebrow="lp injector · non-custodial"
+        title={<>Deepen a pool.<br /><span className="text-accent">One signature.</span></>}
+        body={<>Pick a common pair or enter any Ref Finance pool id. nearpool reads the live reserves, sizes the counter asset exactly, and batches storage, wrapping, deposits and <span className="font-mono">add_liquidity</span> into one wallet approval.</>}
       />
 
       <section className="mt-10 grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <CreatorTerminal onBuy={onBuy} onConnect={onConnect} />
+        <CreatorTerminal onSwap={onSwap} />
         <aside className="space-y-3">
           <div className="rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft)">
-            <div className="flex items-center gap-2 text-sm font-semibold text-ink"><IconShield size={17} className="text-accent" /> launch flow</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink"><IconShield size={17} className="text-accent" /> injection pipeline</div>
             <div className="mt-5 space-y-4">
               {[
-                ["01", "Connect", "Use a browser wallet or WalletConnect."],
-                ["02", "Configure", "Enter your token, pair amount, and preferred LP destination."],
-                ["03", "Confirm", "Review the summary, then sign the direct Uniswap transactions. LP is burned permanently."],
+                ["01", "Checking storage", "Reads NEP-145 registrations for you and Ref on both tokens, plus your Ref account storage."],
+                ["02", "Wrapping NEAR", "near_deposit on wrap.near — only when the NEAR leg exceeds your wNEAR and Ref balances."],
+                ["03", "Depositing to Ref", "ft_transfer_call per token (50 TGas, 1 yocto). Existing Ref deposits are used first."],
+                ["04", "Injecting LP", "add_liquidity with min_amounts at your slippage tolerance (100 TGas)."],
               ].map(([n, label, body]) => (
                 <div key={n} className="flex gap-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accentsoft font-mono text-[10px] font-semibold text-accentstrong">{n}</span>
@@ -73,9 +73,9 @@ export function LaunchPoolPage({ onBuy, onConnect }: { onBuy: () => void; onConn
             </div>
           </div>
           <div className="rounded-3xl border border-line bg-card2/60 p-5">
-            <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">need the token first?</div>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Buy $PONSPOOL on the native swap, then return here when you are ready to thicken the pond.</p>
-            <button onClick={onBuy} className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent">buy $PONSPOOL <IconArrowRight size={14} /></button>
+            <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">missing the counter asset?</div>
+            <p className="mt-2 text-sm leading-relaxed text-muted">Swap for it on Ref first — the output lands in your wallet and the injector picks it up automatically.</p>
+            <button onClick={onSwap} className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent">open swap <IconArrowRight size={14} /></button>
           </div>
         </aside>
       </section>
@@ -83,35 +83,35 @@ export function LaunchPoolPage({ onBuy, onConnect }: { onBuy: () => void; onConn
   );
 }
 
-export function BuyPage({ onConnect }: { onConnect: () => void }) {
+export function SwapPage({ onInject }: { onInject: () => void }) {
   return (
     <div>
       <PageHeader
-        eyebrow="native swap · robinhood chain"
-        title={<>Buy the token that<br /><span className="text-coin">thickens the pond.</span></>}
-        body={<>Swap ETH for <span className="font-semibold text-coin">$PONSPOOL</span> through the native route. Quotes are reserve-based, the wallet signs the transaction, and the interface never takes custody of your assets.</>}
+        eyebrow="ref instant swap · near mainnet"
+        title={<>Source the pair,<br /><span className="text-coin">then fill the pool.</span></>}
+        body={<>Single-hop swaps through the deepest Ref simple pool for the pair. Quotes use Ref's exact fee formula on live reserves, your wallet signs, and the output is sent straight back to you.</>}
       />
 
       <section className="mt-10 grid grid-cols-1 items-start gap-5 lg:grid-cols-[0.85fr_1.15fr]">
         <aside className="order-2 space-y-3 lg:order-1">
           <div className="rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft)">
             <div className="flex items-center gap-3">
-              <TokenAvatar address={PONSPOOL_TOKEN_ADDRESS} size={38} />
-              <div><div className="text-sm font-semibold text-ink">$PONSPOOL</div><div className="font-mono text-[10px] text-faint">platform token · holder tier</div></div>
+              <TokenAvatar size={38} />
+              <div><div className="text-sm font-semibold text-ink">NEAR in, anything out</div><div className="font-mono text-[10px] text-faint">wrap + swap in one approval</div></div>
             </div>
             <div className="mt-5 grid gap-2 text-xs text-muted">
-              <div className="flex items-center gap-2"><IconZap size={14} className="text-coin" /> unlocks zero protocol tax</div>
-              <div className="flex items-center gap-2"><IconShield size={14} className="text-accent" /> routes through the pond contracts</div>
-              <div className="flex items-center gap-2"><IconArrowRight size={14} className="text-muted" /> holds on Robinhood Chain</div>
+              <div className="flex items-center gap-2"><IconZap size={14} className="text-coin" /> min_amount_out enforced on-chain</div>
+              <div className="flex items-center gap-2"><IconShield size={14} className="text-accent" /> output registration handled for you</div>
+              <div className="flex items-center gap-2"><IconSwap size={14} className="text-muted" /> routed through v2.ref-finance.near</div>
             </div>
           </div>
-          <Link to="/how-it-works" className="group block rounded-3xl border border-line bg-card2/60 p-5 transition-colors hover:border-accent/40">
+          <button onClick={onInject} className="group block w-full rounded-3xl border border-line bg-card2/60 p-5 text-left transition-colors hover:border-accent/40">
             <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">what happens next</div>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Learn how the holder tier changes launch-pool fees and how liquidity destinations are handled.</p>
-            <span className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent">read the walkthrough <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
-          </Link>
+            <p className="mt-2 text-sm leading-relaxed text-muted">Take both legs to the injector and add them to the pool in one batch.</p>
+            <span className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent"><IconDropletPlus size={14} /> open the injector <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
+          </button>
         </aside>
-        <div className="order-1 lg:order-2"><SwapCard onConnect={onConnect} /></div>
+        <div className="order-1 lg:order-2"><SwapCard onInject={onInject} /></div>
       </section>
     </div>
   );
@@ -122,47 +122,48 @@ type InfoKind = "how-it-works" | "docs" | "terms" | "privacy";
 const infoContent: Record<InfoKind, { eyebrow: string; title: ReactNode; intro: string; sections: Array<{ heading: string; body: ReactNode }> }> = {
   "how-it-works": {
     eyebrow: "how it works",
-    title: <>A clear path from<br /><span className="text-accent">wallet to pond.</span></>,
-    intro: "PonsPool is a non-custodial flow for creating liquidity positions and routing swaps on Robinhood Chain. The interface guides you; your wallet remains the signer.",
+    title: <>A clear path from<br /><span className="text-accent">wallet to pool.</span></>,
+    intro: "nearpool is a non-custodial interface for adding liquidity to Ref Finance pools on NEAR mainnet. It prepares the exact calls; your wallet signs them.",
     sections: [
-      { heading: "1. Connect a wallet", body: <>Connect a browser wallet or use WalletConnect. PonsPool reads balances and network state so it can show an accurate quote; it does not receive your private keys.</> },
-      { heading: "2. Launch a pool", body: <>Open <Link className="font-semibold text-accent" to="/launch-pool">Launch pool</Link>, enter your token and ETH amounts, and select the LP destination. Uniswap receives only Robinhood ETH for the selected token pool. Any protocol cut is sent to the fee vault for buyback and burn, and shown as burned in the interface.</> },
-      { heading: "3. Burn LP permanently", body: <>After the position is created, the LP position is sent directly to the unrecoverable burn address. There is no locker and no PonsPool custody step in between.</> },
-      { heading: "4. Buy and hold $PONSPOOL", body: <>The platform token can be purchased on the <Link className="font-semibold text-accent" to="/buy">buy page</Link>. Holding the required tier waives the protocol cut for eligible pool launches.</> },
+      { heading: "1. Connect a NEAR wallet", body: <>Use Meteor, HERE, Nightly or Sender through the NEAR Wallet Selector. nearpool reads balances over public RPC and never receives your keys.</> },
+      { heading: "2. Choose a pool", body: <>Open <Link className="font-semibold text-accent" to="/inject">Inject LP</Link> and pick a common pair (resolved on-chain to the deepest Ref simple pool) or type any pool id. Enter one side; the other is computed from live reserves as ΔB = ΔA × ReserveB / ReserveA.</> },
+      { heading: "3. Approve one batch", body: <>nearpool checks storage registrations, wraps NEAR if needed, deposits both legs into Ref with ft_transfer_call and calls add_liquidity — ordered transactions behind a single wallet approval. Progress is read back from the chain as each step lands.</> },
+      { heading: "4. Hold your LP shares", body: <>Shares are minted to your account inside Ref Finance. Manage or withdraw them any time from Ref's own interface. Need the counter asset first? Use the <Link className="font-semibold text-accent" to="/swap">swap page</Link>.</> },
     ],
   },
   docs: {
     eyebrow: "docs · protocol reference",
-    title: <>The pond, in<br /><span className="text-accent">plain language.</span></>,
-    intro: "This reference explains the product surfaces, contract flow, and operational assumptions behind PonsPool.",
+    title: <>The pool, in<br /><span className="text-accent">plain language.</span></>,
+    intro: "Exact contract calls, storage rules and math used by nearpool.",
     sections: [
-      { heading: "Product surfaces", body: <>The landing page shows protocol activity and metrics. Launch pool opens the creator terminal. Buy $PONSPOOL opens the reserve-based swap. All three experiences share the same wallet session and network target.</> },
-      { heading: "Holder tier", body: <>The holder tier is determined by the balance of the platform token in the connected wallet. Eligible holders receive the zero-cut route described in the launch terminal. The UI surfaces the required amount before a transaction is prepared.</> },
-      { heading: "Network and routing", body: <>PonsPool targets Robinhood Chain, chain ID 4663. Uniswap V3 and V4 receive the ETH-only liquidity injection directly. Every LP position is sent to the burn address, while protocol cuts go to the configured fee vault for buyback and burn. Always confirm the chain, recipient, and ETH amount in your wallet before signing.</> },
-      { heading: "Safety checklist", body: <ul className="list-disc space-y-2 pl-5"><li>Verify you are on the intended network.</li><li>Review every wallet prompt before signing.</li><li>Never share a seed phrase or private key.</li><li>Use the explorer link to validate confirmed transactions.</li></ul> },
+      { heading: "Contracts", body: <ul className="list-disc space-y-2 pl-5"><li>Ref Finance exchange: <span className="font-mono">v2.ref-finance.near</span></li><li>Wrapped NEAR: <span className="font-mono">wrap.near</span></li><li>Explorer: nearblocks.io · RPC: rpc.mainnet.near.org with public fallbacks</li></ul> },
+      { heading: "Storage (NEP-145)", body: <>Before depositing, nearpool registers you on wrap.near when wrapping for the first time, registers Ref on a token contract that doesn't know it yet (<span className="font-mono">registration_only: true</span>, the token's own minimum), and registers or tops up your Ref account storage. Non-whitelisted tokens are added to your Ref account with <span className="font-mono">register_tokens</span>. Unused storage collateral is refunded or stays withdrawable.</> },
+      { heading: "Batch layout", body: <>Calls to the same contract share a transaction: Ref storage → token A (storage, near_deposit, ft_transfer_call at 50 TGas) → token B → add_liquidity at 100 TGas. Every token call attaches 1 yoctoNEAR as NEAR's full-access confirmation. First-time LPs attach 0.01 NEAR to add_liquidity for the new share record; Ref refunds whatever isn't used.</> },
+      { heading: "Math", body: <>All amounts are integers in the token's smallest unit (1 NEAR = 10^24 yoctoNEAR). Share previews mirror Ref's own formula — shares = min(amountᵢ × totalShares / reserveᵢ) — and min_amounts reduce the expected used amounts by your slippage tolerance. Leftover rounding dust stays in your Ref deposit.</> },
+      { heading: "Safety checklist", body: <ul className="list-disc space-y-2 pl-5"><li>Review every transaction in your wallet before approving.</li><li>Seeding an empty pool sets its price — check the ratio twice.</li><li>Never share a seed phrase or private key.</li><li>Verify confirmed transactions on nearblocks.io.</li></ul> },
     ],
   },
   terms: {
     eyebrow: "terms of use",
-    title: <>Use the pond<br /><span className="text-accent">with intention.</span></>,
-    intro: "These terms describe the basic rules for using the PonsPool interface. They are product terms, not financial, legal, tax, or investment advice.",
+    title: <>Use the pool<br /><span className="text-accent">with intention.</span></>,
+    intro: "These terms describe the basic rules for using the nearpool interface. They are product terms, not financial, legal, tax, or investment advice.",
     sections: [
-      { heading: "The interface", body: <>PonsPool provides software that helps users interact with supported blockchain contracts. You are responsible for the wallet, network, assets, approvals, gas, and transactions you initiate.</> },
-      { heading: "No custody or guarantee", body: <>PonsPool does not custody your assets and cannot reverse, cancel, or guarantee blockchain transactions. Quotes, balances, metrics, and availability may change without notice.</> },
-      { heading: "Acceptable use", body: <>Do not use the interface to violate applicable law, exploit a contract, interfere with the service, impersonate another person, or upload malicious content. You must be legally permitted to use the service in your jurisdiction.</> },
-      { heading: "Third-party networks", body: <>Blockchain networks, wallets, RPC providers, explorers, and token contracts are third-party systems. Delays, outages, forks, fee changes, and smart-contract risks may affect your experience.</> },
-      { heading: "Changes", body: <>We may update these terms and the interface as the protocol evolves. Continued use after an update means you accept the revised version. If you do not agree, stop using the interface.</> },
+      { heading: "The interface", body: <>nearpool provides software that helps users interact with Ref Finance and NEP-141 token contracts on NEAR. You are responsible for the wallet, assets, storage deposits, gas and transactions you initiate.</> },
+      { heading: "No custody or guarantee", body: <>nearpool does not custody your assets and cannot reverse, cancel, or guarantee blockchain transactions. Quotes, balances, and availability may change without notice.</> },
+      { heading: "Liquidity risk", body: <>Providing liquidity exposes you to price movement between the pooled assets (impermanent loss), smart-contract risk in Ref Finance and the token contracts, and the risks of any token you choose to pool.</> },
+      { heading: "Third-party networks", body: <>NEAR, Ref Finance, wallets, RPC providers and explorers are third-party systems. Delays, outages, fee changes, and contract risks may affect your experience.</> },
+      { heading: "Changes", body: <>We may update these terms and the interface as the product evolves. Continued use after an update means you accept the revised version. If you do not agree, stop using the interface.</> },
     ],
   },
   privacy: {
     eyebrow: "privacy policy",
     title: <>Minimal data.<br /><span className="text-accent">Maximum clarity.</span></>,
-    intro: "PonsPool is designed around wallet-based interaction. This policy explains the categories of information the interface may process and why.",
+    intro: "nearpool is designed around wallet-based interaction. This policy explains the categories of information the interface may process and why.",
     sections: [
-      { heading: "Wallet and transaction data", body: <>When you connect a wallet, the public address, chain ID, balances, and transaction status may be read from the network or wallet provider. Public blockchain activity is visible by design. PonsPool does not request or store private keys or seed phrases.</> },
-      { heading: "Local preferences", body: <>Theme choice, temporary session state, and interface preferences may be stored locally in your browser. Clearing site data removes these local preferences.</> },
-      { heading: "Service providers", body: <>Wallet connectors, RPC endpoints, explorers, hosting providers, and analytics or error-monitoring services may process technical request data according to their own policies. Review their terms before connecting.</> },
-      { heading: "Data choices", body: <>You can disconnect your wallet, clear local site data, and stop using the interface at any time. Because blockchain records are public and distributed, confirmed on-chain data cannot be deleted by PonsPool.</> },
+      { heading: "Wallet and transaction data", body: <>When you connect, your public NEAR account ID, balances, storage registrations and Ref deposits are read from public RPC. Confirmed injections may be listed on the public activity feed by transaction hash and account ID. nearpool never requests or stores private keys or seed phrases.</> },
+      { heading: "Local preferences", body: <>Theme choice and the wallet selector's session (which wallet you last used) are stored locally in your browser. Clearing site data removes them.</> },
+      { heading: "Service providers", body: <>Wallet providers, RPC endpoints, explorers and hosting providers may process technical request data according to their own policies. Review their terms before connecting.</> },
+      { heading: "Data choices", body: <>You can disconnect your wallet, clear local site data, and stop using the interface at any time. Because blockchain records are public and distributed, confirmed on-chain data cannot be deleted by nearpool.</> },
       { heading: "Contact and updates", body: <>For privacy questions, use the project contact channel listed in the repository or deployment environment. We may update this policy when the product or integrations change.</> },
     ],
   },

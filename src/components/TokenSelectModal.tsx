@@ -1,37 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useTokenMeta } from "../hooks/useTokenMeta";
-import type { RegistryTokenSummary } from "../lib/tokenRegistry";
-import { WETH_ADDRESS } from "../lib/constants";
-import { shortAddr } from "../lib/format";
+import { COMMON_TOKENS, WRAP_NEAR_CONTRACT_ID } from "../config/near";
+import { useFtMetadata } from "../hooks/useRefData";
+import { isValidAccountId } from "../lib/near";
+import { shortAccount } from "../lib/format";
+import { displaySymbol } from "../lib/refFinance";
 import { TokenAvatar } from "./TokenAvatar";
-import { searchPonsLaunches, type PonsLaunchToken } from "../lib/ponsCatalog";
 import { IconClose, IconLoader, IconSearch } from "./icons";
 
-const isAddr = (s: string) => /^0x[a-fA-F0-9]{40}$/.test(s);
-
-function TokenRow({
-  token,
-  subtitle,
-  onSelect,
-  logo,
-}: {
-  token: RegistryTokenSummary;
-  subtitle?: string;
-  onSelect: (address: string) => void;
-  logo?: string;
-}) {
+function TokenRow({ tokenId, subtitle, onSelect }: { tokenId: string; subtitle?: string; onSelect: (tokenId: string) => void }) {
+  const meta = useFtMetadata(tokenId);
+  const symbol = displaySymbol(tokenId, meta.data);
+  const name = tokenId === WRAP_NEAR_CONTRACT_ID ? "NEAR (wrapped on deposit)" : meta.data?.name ?? (meta.isLoading ? "reading…" : "unknown token");
   return (
     <button
-      onClick={() => onSelect(token.address)}
+      onClick={() => onSelect(tokenId)}
       className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-card2"
     >
-      <TokenAvatar address={token.address} symbol={token.symbol} logo={logo} size={34} />
+      <TokenAvatar tokenId={tokenId} size={34} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-semibold text-ink">{token.name}</div>
+        <div className="truncate text-sm font-semibold text-ink">{name}</div>
         <div className="flex items-center gap-1.5 font-mono text-[11px] text-faint">
-          <span className="font-semibold text-muted">{token.symbol}</span>
-          <span>{shortAddr(token.address)}</span>
+          <span className="font-semibold text-muted">{symbol}</span>
+          <span className="truncate">{shortAccount(tokenId, 28)}</span>
         </div>
       </div>
       {subtitle && <span className="shrink-0 font-mono text-[9.5px] text-faint">{subtitle}</span>}
@@ -39,88 +30,50 @@ function TokenRow({
   );
 }
 
-/**
- * Uniswap-style token selector. Resolves pasted addresses live against
- * Robinhood Chain, and lists tokens launched through the Pons catalog.
- */
+function PastedToken({ tokenId, onSelect }: { tokenId: string; onSelect: (tokenId: string) => void }) {
+  const meta = useFtMetadata(tokenId);
+  if (meta.isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 px-3 py-5 font-mono text-[11px] text-faint">
+        <IconLoader size={13} className="animate-spin" /> reading ft_metadata…
+      </div>
+    );
+  }
+  if (meta.isError || !meta.data) {
+    return <div className="px-3 py-6 text-center font-mono text-[11px] text-faint">{tokenId} doesn't expose NEP-141 metadata</div>;
+  }
+  return <TokenRow tokenId={tokenId} subtitle="live read" onSelect={onSelect} />;
+}
+
+/** Token picker: common NEAR tokens, or paste any NEP-141 contract account ID. */
 export function TokenSelectModal({
   open,
   onClose,
   onSelect,
-  excludeAddress,
+  excludeTokenId,
 }: {
   open: boolean;
   onClose: () => void;
-  onSelect: (address: string) => void;
-  excludeAddress?: string;
+  onSelect: (tokenId: string) => void;
+  excludeTokenId?: string | null;
 }) {
   const [query, setQuery] = useState("");
-  const [ponsLaunches, setPonsLaunches] = useState<PonsLaunchToken[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    setCatalogLoading(true);
-    searchPonsLaunches("", controller.signal)
-      .then(setPonsLaunches)
-      .catch((error: unknown) => {
-        if ((error as { name?: string })?.name !== "AbortError") setPonsLaunches([]);
-      })
-      .finally(() => setCatalogLoading(false));
-    return () => controller.abort();
-  }, [open]);
-
-  const all = useMemo(() => {
-    const merged = [...ponsLaunches];
-    const seen = new Set<string>();
-    return merged.filter((token) => {
-      const key = token.address.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [ponsLaunches]);
   const q = query.trim().toLowerCase();
-  const exclude = excludeAddress?.toLowerCase();
 
   const filtered = useMemo(
     () =>
-      all.filter((t) => {
-        if (exclude && t.address.toLowerCase() === exclude) return false;
+      COMMON_TOKENS.filter((t) => {
+        if (excludeTokenId && t.id === excludeTokenId) return false;
         if (!q) return true;
-        return (
-          t.symbol.toLowerCase().includes(q) ||
-          t.name.toLowerCase().includes(q) ||
-          t.address.toLowerCase().includes(q)
-        );
+        return t.symbol.toLowerCase().includes(q) || t.id.includes(q);
       }),
-    [all, q, exclude],
+    [q, excludeTokenId],
   );
 
-  const queryIsAddr = isAddr(query.trim());
-  const exactHit = queryIsAddr && filtered.some((t) => t.address.toLowerCase() === q);
-  const pastedAddress = queryIsAddr && !exactHit ? (query.trim() as `0x${string}`) : undefined;
-  const live = useTokenMeta(pastedAddress, WETH_ADDRESS as `0x${string}`);
+  const pasted = q && isValidAccountId(q) && !filtered.some((t) => t.id === q) && q !== excludeTokenId ? q : null;
 
-  // Keep a valid pasted address selectable while metadata is loading or when
-  // the token does not expose the standard ERC-20 name/symbol methods. The
-  // creator form can still use the address, and selecting a different pasted
-  // address simply replaces the current one in the search field.
-  const liveRow: RegistryTokenSummary | null = pastedAddress
-    ? {
-        address: pastedAddress,
-        symbol: live.symbol ?? "TOKEN",
-        name: live.name ?? "Pasted token",
-        decimals: live.decimals ?? 18,
-        logo: live.logo,
-      }
-    : null;
-
-  const nothingFound = !filtered.length && !liveRow && !(pastedAddress && live.isLoading);
-
-  const handleSelect = (address: string) => {
-    onSelect(address);
+  const handleSelect = (tokenId: string) => {
+    onSelect(tokenId);
     setQuery("");
     onClose();
   };
@@ -157,8 +110,9 @@ export function TokenSelectModal({
                   autoFocus
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="search name, symbol, or paste address"
+                  placeholder="search symbol, or paste token.near"
                   spellCheck={false}
+                  autoCapitalize="off"
                   className="w-full bg-transparent font-mono text-[13px] text-ink outline-none placeholder:text-faint"
                 />
               </div>
@@ -166,41 +120,15 @@ export function TokenSelectModal({
 
             <div className="mt-2 flex-1 overflow-y-auto px-2 pb-3">
               <div className="px-3 pt-2 pb-1 font-mono text-[9.5px] tracking-[0.14em] text-faint uppercase">
-                {q
-                  ? "search results"
-                    : catalogLoading
-                    ? "loading Pons launches…"
-                    : `Pons launches · ${ponsLaunches.length}`}
+                {q ? "search results" : `common tokens · ${filtered.length}`}
               </div>
-
-              {catalogLoading && !filtered.length && (
-                <div className="flex items-center justify-center gap-2 px-3 py-5 font-mono text-[11px] text-faint">
-                  <IconLoader size={13} className="animate-spin" /> loading Pons launches…
-                </div>
-              )}
-
               {filtered.map((t) => (
-                <TokenRow key={t.address} token={t} onSelect={handleSelect} />
+                <TokenRow key={t.id} tokenId={t.id} onSelect={handleSelect} />
               ))}
-
-              {liveRow && (
-                <TokenRow
-                  token={liveRow}
-                  logo={liveRow.logo}
-                  subtitle={live.liveRead ? "live read" : live.isLoading ? "reading…" : "address"}
-                  onSelect={handleSelect}
-                />
-              )}
-
-              {pastedAddress && live.isLoading && (
-                <div className="flex items-center justify-center gap-2 px-3 py-5 font-mono text-[11px] text-faint">
-                  <IconLoader size={13} className="animate-spin" /> reading contract…
-                </div>
-              )}
-
-              {nothingFound && !catalogLoading && (
+              {pasted && <PastedToken tokenId={pasted} onSelect={handleSelect} />}
+              {!filtered.length && !pasted && (
                 <div className="px-3 py-6 text-center font-mono text-[11px] text-faint">
-                  {q ? "no Pons launch found for that search" : "no Pons launches yet"}
+                  no match — paste a full NEP-141 contract ID like <span className="text-muted">token.v2.ref-finance.near</span>
                 </div>
               )}
             </div>

@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "ponspool",
-  "short_name": "ponspool",
-  "description": "Instant LP injection on Robinhood Chain — seed your pool, burn or lock the LP. Non-custodial.",
+  "name": "nearpool",
+  "short_name": "nearpool",
+  "description": "Instant LP injection into Ref Finance pools on NEAR. Non-custodial.",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
