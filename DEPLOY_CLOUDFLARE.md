@@ -1,24 +1,17 @@
-# Deploying nearpool on Cloudflare
+# Deploying nearpool on Cloudflare Workers
 
-nearpool is a static Vite build (`dist/`) plus one small API: the shared
-activity feed at `/api/activity/*`. On Cloudflare the API runs as a Worker
-(or a Pages Function) and stores posts in **D1**. Everything else (wallet
-connection, RPC reads, transactions) happens in the browser, so the site
-works without the API; only the landing-page feed needs it.
+nearpool is a static Vite build (`dist/`) plus a small Worker
+(`worker/index.ts`) that serves two APIs:
 
-You can deploy with either product. Both use the same code in
-`worker/activity.ts`.
+- `/api/rpc`: a NEAR RPC proxy, so a keyed provider such as Lava stays secret;
+- `/api/activity/*`: the shared activity feed, stored in **D1**.
 
-| | **Workers** (recommended) | **Pages** |
-| --- | --- | --- |
-| Config | `wrangler.toml` | Pages dashboard + `functions/` |
-| API entry | `worker/index.ts` | `functions/api/[[path]].ts` |
-| SPA fallback | `not_found_handling = "single-page-application"` | automatic (no top-level `404.html`) |
-| Headers | `public/_headers` | `public/_headers` |
-| Deploy | `npm run cf:deploy` | `npm run cf:pages:deploy` or Git integration |
+Everything else (wallet connection, RPC reads, transactions) happens in the
+browser. The site works without the feed, which only fills the landing page.
 
-Cloudflare now steers new projects to Workers with static assets. Pages
-still works if you already use it.
+Workers serves `dist/` as static assets. Only `/api/*` runs Worker code
+(`run_worker_first`). Unknown paths fall back to `index.html`, so client
+routes such as `/swap` and `/t/usdt.tether-token.near` load directly.
 
 ---
 
@@ -31,7 +24,7 @@ npx wrangler login          # opens a browser to authorize wrangler
 
 Node 20 or newer is required (22 recommended).
 
-## 1. Create the D1 database (both options)
+## 1. Create the D1 database
 
 ```bash
 npx wrangler d1 create nearpool-activity
@@ -59,23 +52,15 @@ npx wrangler d1 migrations apply nearpool-activity --remote
 
 ---
 
-## Option A — Cloudflare Workers (static assets)
-
-### Deploy from your machine
+## 2. Deploy from your machine
 
 ```bash
 npm run cf:deploy           # wrangler deploy (runs `npm run build` first via [build])
 ```
 
-wrangler uploads `dist/` as static assets and `worker/index.ts` as the
-Worker. Only `/api/*` runs Worker code (`run_worker_first`). Every other
-path is served from the asset store, and unknown paths fall back to
-`index.html` so client routes like `/swap` and token pages such as
-`/t/usdt.tether-token.near` load directly.
-
 Your site is live at `https://nearpool.<your-subdomain>.workers.dev`.
 
-### Deploy from GitHub (Workers Builds)
+## 3. Deploy from GitHub (Workers Builds)
 
 1. Dashboard → **Workers & Pages → Create → Import a repository** and pick
    `meisems/nearpool`.
@@ -87,44 +72,28 @@ Your site is live at `https://nearpool.<your-subdomain>.workers.dev`.
    if you need to override the defaults.
 
 Each push to the production branch redeploys. Other branches get preview
-URLs.
+URLs. Node 22 is pinned in `.node-version`, which Workers Builds reads.
 
-### Custom domain
+If a build fails, open **View logs** on the failed build (the GitHub check
+links to it). The usual causes:
+
+- **D1 database not found**: `database_id` in `wrangler.toml` must be a
+  database in the same Cloudflare account as the Worker.
+- **Worker name mismatch**: the Worker in the dashboard must be named
+  `nearpool`, the `name` in `wrangler.toml`.
+- **Custom commands**: in **Settings → Builds**, leave the root directory
+  empty, set the build command to empty or `npm run build`, and the deploy
+  command to `npx wrangler deploy`.
+
+Moving off Pages: in the dashboard, open the old `nearpool` **Pages**
+project → **Settings → Builds → Disconnect** (or delete the project) so it
+stops building every push. Point any custom domain at the Worker instead.
+
+## 4. Custom domain
 
 Dashboard → your Worker → **Settings → Domains & Routes → Add → Custom
 domain**, then enter e.g. `nearpool.xyz`. Cloudflare creates the DNS record
 and certificate.
-
----
-
-## Option B — Cloudflare Pages
-
-### Deploy from GitHub
-
-1. Dashboard → **Workers & Pages → Create → Pages → Connect to Git** and pick
-   `meisems/nearpool`.
-2. Build settings:
-   - Framework preset: **None** (or Vite)
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-   - Environment variable: `NODE_VERSION = 22`
-3. Save and deploy. Pages detects `functions/` automatically.
-4. Bind D1: **Settings → Bindings → Add → D1 database**. Variable name `DB`,
-   database `nearpool-activity`. Redeploy so the binding takes effect.
-
-### Deploy from your machine
-
-```bash
-npm run cf:pages:deploy     # vite build → wrangler pages deploy dist
-```
-
-The first run creates the `nearpool` Pages project. Bind D1 in the dashboard
-as in step 4 above.
-
-> `wrangler.toml` is written for the Workers deployment (it has no
-> `pages_build_output_dir`), so production Pages deploys don't take bindings
-> or variables from it and wrangler may print a warning saying so. Configure
-> the Pages project's bindings and variables in the dashboard.
 
 ---
 
@@ -133,8 +102,9 @@ as in step 4 above.
 ### Build time (browser bundle)
 
 These are inlined by Vite when `npm run build` runs, so set them wherever
-the build happens: your shell for local deploys, or **Settings → Variables**
-(Build) for Git-connected projects. Changing them requires a rebuild.
+the build happens: your shell for local deploys, or the Worker's **Settings →
+Builds → Variables and secrets** for Workers Builds. Changing them requires
+a rebuild.
 
 | Variable | Default |
 | --- | --- |
@@ -151,11 +121,10 @@ The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
 production, put a dedicated RPC (FastNEAR, Lava, Ankr, etc.) in
 `VITE_NEAR_RPC_URL`; the fallbacks cover outages.
 
-### Runtime (Worker / Pages Function)
+### Runtime (Worker)
 
-Used by `/api/rpc` (the RPC proxy) and the activity feed. Workers: `[vars]`
-in `wrangler.toml`, secrets via `wrangler secret put`. Pages: **Settings →
-Variables and Secrets**.
+Used by `/api/rpc` (the RPC proxy) and the activity feed. Plain values go in
+`[vars]` in `wrangler.toml`; secrets via `npx wrangler secret put`.
 
 | Variable | Default |
 | --- | --- |
@@ -172,13 +141,11 @@ your provider:
 
 1. In the Lava dashboard, copy your **NEAR mainnet HTTPS (JSON-RPC)**
    endpoint — the full URL, including the key.
-2. Store it as a secret:
-   - Workers: `npx wrangler secret put NEAR_RPC_URL` and paste the URL.
-   - Pages: **Settings → Variables and Secrets → Add**, name
-     `NEAR_RPC_URL`, type **Secret**.
-3. Set the build variable `VITE_NEAR_RPC_URL=/api/rpc` (Workers Builds /
-   Pages build settings, or in your shell for `npm run cf:deploy`), then
-   redeploy.
+2. Store it as a secret: `npx wrangler secret put NEAR_RPC_URL` and paste
+   the URL (or the Worker's **Settings → Variables and Secrets → Add**, type
+   **Secret**).
+3. Set the build variable `VITE_NEAR_RPC_URL=/api/rpc` (Workers Builds
+   settings, or in your shell for `npm run cf:deploy`), then redeploy.
 
 Check it: `curl -X POST https://<your-host>/api/rpc -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"status","params":[]}'`
 should return chain status, and the key must not appear anywhere in the
@@ -199,17 +166,6 @@ dashboard.
 npx wrangler d1 migrations apply nearpool-activity --local
 npm run cf:dev              # wrangler dev on http://localhost:8787 (builds first)
 ```
-
-For the Pages flavour:
-
-```bash
-npm run build
-npx wrangler pages dev dist --d1 DB=nearpool-activity
-```
-
-`pages dev` keeps its own local D1 copy. If publishing returns
-`no such table: nearpool_activity`, run the SQL in
-`migrations/0001_activity.sql` against it, or use the Workers flavour above.
 
 `npm run dev` (plain Vite on :3000) is still the fastest loop for UI work;
 the feed is simply empty there.

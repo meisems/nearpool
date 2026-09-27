@@ -45,7 +45,7 @@ Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`
 | `src/lib/tokenInput.ts` | Parses pasted addresses, pool IDs and nearblocks / Ref links |
 | `src/components/InjectPanel.tsx`, `pages/index.tsx` | Add-liquidity panel; home, token, tracked, swap and docs pages |
 | `server.mjs` | Node hosting + shared activity feed (each post re-verified against NEAR RPC) |
-| `worker/`, `functions/` | Same activity feed for Cloudflare Workers / Pages, stored in D1 (`migrations/`) |
+| `worker/` | Cloudflare Worker: `/api/rpc` proxy and the activity feed, stored in D1 (`migrations/`) |
 
 ## Development
 
@@ -59,8 +59,8 @@ npm run build && npm start   # production server on :10000 (serves dist/ + /api/
 
 ### Deploying
 
-- **Cloudflare Workers or Pages** — see [DEPLOY_CLOUDFLARE.md](DEPLOY_CLOUDFLARE.md)
-  (`npm run cf:deploy` / `npm run cf:pages:deploy`; activity feed on D1).
+- **Cloudflare Workers** — see [DEPLOY_CLOUDFLARE.md](DEPLOY_CLOUDFLARE.md)
+  (`npm run cf:deploy`; activity feed on D1).
 - **Node hosts (Render etc.)** — `render.yaml` runs `server.mjs`; activity feed on Turso.
 
 ### Environment (all optional)
