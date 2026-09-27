@@ -16,7 +16,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "nearpool-activity"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "5a81f944-1f99-4d49-b9c0-8e891d43e327"
 migrations_dir = "migrations"
 
 [vars]
