@@ -162,3 +162,48 @@ input[type="range"].cut-slider::-moz-range-thumb { width: 14px; height: 14px; bo
 /* OKX-like product details: crisp hairline borders, compact controls, clear disabled states. */
 button:not(:disabled), a { transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease; }
 button:not(:disabled):active { transform: translateY(1px); }
+
+/* ------------------------------------------------------------------
+ * NEAR Wallet Selector modal — re-skinned with the app's own tokens so it
+ * follows the in-app light/dark toggle instead of the OS preference.
+ * Scoped to .nws-modal-wrapper to outrank the library's own theme blocks.
+ * ------------------------------------------------------------------ */
+#near-wallet-selector-modal .nws-modal-wrapper {
+  --backdrop-bg: color-mix(in srgb, var(--canvas) 55%, transparent);
+  --heading-color: var(--ink);
+  --text-color: var(--muted);
+  --sidebar-border-color: var(--line);
+  --selected-wallet-bg: var(--accent-soft);
+  --selected-wallet-bg-hover: var(--card-2);
+  --wallet-option-border-color: var(--line);
+  --wallet-option-bg-hover: var(--accent-soft);
+  --wallet-option-outline-color: var(--accent);
+  --content-bg: var(--card);
+  --change-path-bg: var(--card-2);
+  --home-button-bg: var(--card-2);
+  --confirm-button-bg: var(--ink);
+  --confirm-button-bg-hover: var(--accent);
+  --error: var(--danger);
+  --close-button-bg-color: var(--card-2);
+  --close-button-fill-icon-color: var(--muted);
+  --spinner-color: var(--accent);
+  --bottom-section: var(--card-2);
+  --mobile-text: var(--muted);
+  --connected-green: var(--vip);
+  --get-wallet-option-bg-color: var(--card-2);
+  --get-wallet-option-bg-color-hover: var(--accent-soft);
+  --get-wallet-option-border-color: var(--line);
+  --get-wallet-outline-color: var(--accent);
+  --secondary-button-bg-color: var(--accent-soft);
+  --secondary-button-border-color: var(--accent-soft);
+  --secondary-button-text-color: var(--accent-strong);
+  --what-wallet-icon-color: var(--accent);
+  --option-wallet-bg-color: var(--card-2);
+  --option-single-wallet-bg-color: var(--card-2);
+}
+
+#near-wallet-selector-modal .nws-modal-wrapper .nws-modal {
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow-pop);
+}

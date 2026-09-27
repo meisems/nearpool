@@ -89,7 +89,7 @@ the web app alone. Typical path:
    [PWABuilder](https://www.pwabuilder.com/) (paste your deployed URL — it
    reads the manifest you now have) or Google's
    [Bubblewrap CLI](https://github.com/GoogleChromeLabs/bubblewrap).
-2. Get the package name you chose (e.g. `com.yourcompany.ponspool`) and the
+2. Get the package name you chose (e.g. `com.yourcompany.nearpool`) and the
    SHA-256 fingerprint of the signing key (`keytool -list -v -keystore
    your.keystore` — look for `SHA256:`; use the *upload*/release key's
    fingerprint, not just the debug key, once you're ready for production).

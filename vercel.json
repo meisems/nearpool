@@ -1,9 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/rpc", "destination": "https://rpc.mainnet.chain.robinhood.com/" },
-    { "source": "/api/explorer", "destination": "https://robinhoodchain.blockscout.com/api" },
-    { "source": "/api/price/eth", "destination": "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd" },
-    { "source": "/api/price/pons/:address", "destination": "https://api.dexscreener.com/latest/dex/tokens/:address" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

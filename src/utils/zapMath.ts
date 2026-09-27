@@ -1,173 +1,149 @@
 /**
- * Pure zap mathematics — the single source of truth for single-sided
- * liquidity splits, using the standard Uniswap V3/V4 liquidity formulas.
+ * Integer-exact liquidity math for Ref Finance simple pools.
+ *
+ * Everything operates on `bigint` raw units (yoctoNEAR / 10^-decimals of a
+ * NEP-141 token). Division always truncates toward zero exactly like the
+ * Rust `u128`/`U256` arithmetic in Ref's contract, so previews match what
+ * the chain will do rather than drifting through floating point.
  */
 
-/* ------------------------------------------------------ integer core */
+/** Ref Finance's fee denominator: `total_fee` is expressed in basis points. */
+export const FEE_DIVISOR = 10_000n;
+export const BPS_DIVISOR = 10_000n;
 
-/** Babylonian integer square root (BigInt). */
-export function isqrt(x: bigint): bigint {
-  if (x < 2n) return x;
-  let y = x;
-  let z = (x + 1n) / 2n;
-  while (z < y) {
-    y = z;
-    z = (x / z + z) / 2n;
+/** Shares minted by Ref for the very first deposit into an empty simple pool. */
+export const INIT_SHARES_SUPPLY = 10n ** 24n;
+
+/** Ref simple-pool LP shares use 24 decimals. */
+export const LP_SHARE_DECIMALS = 24;
+
+export function mulDiv(a: bigint, b: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) throw new RangeError("mulDiv: division by zero");
+  return (a * b) / denominator;
+}
+
+export function mulDivCeil(a: bigint, b: bigint, denominator: bigint): bigint {
+  if (denominator === 0n) throw new RangeError("mulDivCeil: division by zero");
+  const product = a * b;
+  return product === 0n ? 0n : (product - 1n) / denominator + 1n;
+}
+
+export const minBig = (a: bigint, b: bigint) => (a < b ? a : b);
+export const maxBig = (a: bigint, b: bigint) => (a > b ? a : b);
+
+/**
+ * Proportional counter-asset amount at the pool's current ratio:
+ *
+ *   ΔTokenB = ΔTokenA × ReserveB / ReserveA
+ *
+ * Rounded up by at most one raw unit so the side the user typed stays the
+ * binding side in Ref's share calculation (Ref then deposits the exact
+ * proportional amount and leaves any dust in the user's Ref balance).
+ */
+export function quoteCounterAmount(amountA: bigint, reserveA: bigint, reserveB: bigint): bigint {
+  if (amountA <= 0n || reserveA <= 0n || reserveB <= 0n) return 0n;
+  return mulDivCeil(amountA, reserveB, reserveA);
+}
+
+/** Reduce an amount by a slippage tolerance in basis points (floor). */
+export function applySlippage(amount: bigint, slippageBps: number): bigint {
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000) {
+    throw new RangeError(`invalid slippage: ${slippageBps} bps`);
   }
-  return y;
+  return mulDiv(amount, BPS_DIVISOR - BigInt(slippageBps), BPS_DIVISOR);
+}
+
+export interface AddLiquidityEstimate {
+  /** LP shares Ref will mint. */
+  shares: bigint;
+  /** Amounts Ref will actually pull from the user's Ref deposits, in pool token order. */
+  usedAmounts: bigint[];
+  /** Post-deposit ownership of the pool, in basis points of total supply. */
+  poolShareBps: number;
+  /** True when the pool is empty and this deposit sets the initial price. */
+  initializesPool: boolean;
 }
 
 /**
- * Uniswap V2 exact zap — zero-dust split of `totalEthToInject`:
+ * Mirror of Ref's `SimplePool::add_liquidity`:
  *
- *   a = ( sqrt(R·(R·3988009 + A·3988000)) − 1997·R ) / 1994
+ *   fair_supply = min_i(amount_i × total_shares / reserve_i)
+ *   used_i      = reserve_i × fair_supply / total_shares
  *
- * `a` = ETH leg swapped for project tokens; (A − a) pairs with the proceeds.
+ * For an empty pool every amount is used as-is and INIT_SHARES_SUPPLY is
+ * minted.
  */
-export function calculateV2ZapSwapAmount(reserveIn: bigint, totalEthToInject: bigint): bigint {
-  if (reserveIn <= 0n || totalEthToInject <= 0n) return 0n;
-  const inner = reserveIn * (reserveIn * 3_988_009n + totalEthToInject * 3_988_000n);
-  let a = (isqrt(inner) - reserveIn * 1997n) / 1994n;
-  if (a < 0n) a = 0n;
-  if (a > totalEthToInject) a = totalEthToInject;
-  return a;
+export function estimateAddLiquidity(amounts: bigint[], reserves: bigint[], totalShares: bigint): AddLiquidityEstimate {
+  if (amounts.length !== reserves.length) throw new RangeError("amounts/reserves length mismatch");
+  if (amounts.some((a) => a <= 0n)) {
+    return { shares: 0n, usedAmounts: amounts.map(() => 0n), poolShareBps: 0, initializesPool: totalShares === 0n };
+  }
+  if (totalShares === 0n) {
+    return { shares: INIT_SHARES_SUPPLY, usedAmounts: [...amounts], poolShareBps: 10_000, initializesPool: true };
+  }
+  if (reserves.some((r) => r <= 0n)) {
+    return { shares: 0n, usedAmounts: amounts.map(() => 0n), poolShareBps: 0, initializesPool: false };
+  }
+  let fair: bigint | null = null;
+  for (let i = 0; i < amounts.length; i++) {
+    const candidate = mulDiv(amounts[i], totalShares, reserves[i]);
+    fair = fair === null ? candidate : minBig(fair, candidate);
+  }
+  const shares = fair ?? 0n;
+  const usedAmounts = reserves.map((reserve) => mulDiv(reserve, shares, totalShares));
+  if (usedAmounts.some((a) => a === 0n)) {
+    return { shares: 0n, usedAmounts: amounts.map(() => 0n), poolShareBps: 0, initializesPool: false };
+  }
+  const poolShareBps = Number(mulDiv(shares, BPS_DIVISOR, totalShares + shares));
+  return { shares, usedAmounts, poolShareBps, initializesPool: false };
 }
 
-/** AMM output for `amountIn` against reserves, with the 0.30% swap fee. */
-export function getAmountOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint): bigint {
+/** `min_amounts` for `add_liquidity`: the expected used amounts minus slippage. */
+export function minAmountsFor(usedAmounts: bigint[], slippageBps: number): bigint[] {
+  return usedAmounts.map((amount) => applySlippage(amount, slippageBps));
+}
+
+/**
+ * Mirror of Ref's simple-pool constant-product swap with `total_fee` bps:
+ *
+ *   in_with_fee = amount_in × (FEE_DIVISOR − fee)
+ *   out         = in_with_fee × reserve_out / (FEE_DIVISOR × reserve_in + in_with_fee)
+ */
+export function estimateSwapOut(amountIn: bigint, reserveIn: bigint, reserveOut: bigint, totalFeeBps: number): bigint {
   if (amountIn <= 0n || reserveIn <= 0n || reserveOut <= 0n) return 0n;
-  const inWithFee = amountIn * 997n;
-  return (inWithFee * reserveOut) / (reserveIn * 1000n + inWithFee);
+  const inWithFee = amountIn * (FEE_DIVISOR - BigInt(totalFeeBps));
+  return (inWithFee * reserveOut) / (FEE_DIVISOR * reserveIn + inWithFee);
 }
 
-/** Price impact of swapping `swapIn` into `reserveIn`, as a percentage. */
-export function priceImpactPct(reserveIn: bigint, swapIn: bigint): number {
-  if (reserveIn <= 0n || swapIn <= 0n) return 0;
-  return Number((swapIn * 10_000n) / reserveIn) / 100;
+/** Price impact of a swap in basis points, relative to the pre-trade spot price. */
+export function swapPriceImpactBps(amountIn: bigint, amountOut: bigint, reserveIn: bigint, reserveOut: bigint): number {
+  if (amountIn <= 0n || amountOut <= 0n || reserveIn <= 0n || reserveOut <= 0n) return 0;
+  // Spot output without impact or fee: amountIn × reserveOut / reserveIn.
+  const spotOut = mulDiv(amountIn, reserveOut, reserveIn);
+  if (spotOut <= amountOut) return 0;
+  return Number(mulDiv(spotOut - amountOut, BPS_DIVISOR, spotOut));
 }
 
-const Q96 = 2n ** 96n;
-
-function sqrtPriceAtTickX96(tick: number): bigint {
-  const value = Math.pow(1.0001, tick / 2) * 2 ** 96;
-  return BigInt(Math.max(1, Math.floor(value)));
+export interface FundingSplit {
+  /** Taken from the user's existing Ref internal deposit. */
+  fromRef: bigint;
+  /** Must be transferred from the wallet into Ref (`ft_transfer_call`). */
+  toDeposit: bigint;
 }
 
-/** Approximate V3/V4 liquidity L for a native-ETH/token position. */
-export function liquidityForAmounts(
-  sqrtPriceX96: bigint,
-  tickLower: number,
-  tickUpper: number,
-  amount0: bigint,
-  amount1: bigint,
-): bigint {
-  if (sqrtPriceX96 <= 0n || amount0 < 0n || amount1 < 0n || tickLower >= tickUpper) return 0n;
-  const pa = sqrtPriceAtTickX96(tickLower);
-  const pb = sqrtPriceAtTickX96(tickUpper);
-  if (sqrtPriceX96 <= pa) {
-    const denominator = (pb - pa) * Q96;
-    return denominator > 0n ? (amount0 * pa * pb) / denominator : 0n;
-  }
-  if (sqrtPriceX96 < pb) {
-    const l0 = (amount0 * sqrtPriceX96 * pb) / ((pb - sqrtPriceX96) * Q96);
-    const l1 = (amount1 * Q96) / (sqrtPriceX96 - pa);
-    if (l0 === 0n) return l1;
-    if (l1 === 0n) return l0;
-    return l0 < l1 ? l0 : l1;
-  }
-  const denominator = pb - pa;
-  return denominator > 0n ? (amount1 * Q96) / denominator : 0n;
-}
-
-/* ------------------------------------------------- concentrated math */
-
-/** sqrt(1.0001^tick) as a float — good enough for preview ratios. */
-export function tickToSqrtPrice(tick: number): number {
-  return Math.pow(1.0001, tick / 2);
-}
-
-/** Approximate tick for a price (tokenWei per ethWei). */
-export function priceToTick(price: number): number {
-  if (price <= 0) return 0;
-  return Math.round(Math.log(price) / Math.log(1.0001));
-}
-
-/** Round a tick to a valid tick for the given fee tier spacing. */
-export function toValidTick(tick: number, spacing: number): number {
-  return Math.round(tick / spacing) * spacing;
-}
-
-export const TICK_SPACING: Record<number, number> = { 500: 10, 3000: 60, 10000: 200 };
-
-export function fullRangeTicks(spacing: number): { tickLower: number; tickUpper: number } {
-  const max = Math.floor(887272 / spacing) * spacing;
-  return { tickLower: -max, tickUpper: max };
+/** Split a required amount between existing Ref deposits and a fresh wallet deposit. */
+export function splitFunding(required: bigint, refDeposit: bigint, useRefDeposit: boolean): FundingSplit {
+  const fromRef = useRefDeposit ? minBig(maxBig(refDeposit, 0n), required) : 0n;
+  return { fromRef, toDeposit: required - fromRef };
 }
 
 /**
- * V3/V4 concentrated-liquidity amount ratios for a position around the
- * current price, derived from the standard liquidity formulas:
- *
- *   amount0 = L·(√Pb − √P) / (√P·√Pb)     amount1 = L·(√P − √Pa)
- *
- * Returns raw-unit ratios { ethRatio, tokenRatio } normalised so that
- * ethRatio + tokenRatio === 1 (value split of the deposit).
+ * Spot price of token B denominated in token A as a float, for display
+ * only (never fed back into transaction amounts).
  */
-export function calculateV3ZapRatios(
-  sqrtPriceX96: bigint,
-  tickLower: number,
-  tickUpper: number,
-): { ethRatio: number; tokenRatio: number } {
-  // Convert the Q64.96 sqrt price to a float (token-per-eth).
-  const sqrtP = Number(sqrtPriceX96) / 2 ** 96;
-  const pa = tickToSqrtPrice(Math.min(tickLower, tickUpper));
-  const pb = tickToSqrtPrice(Math.max(tickLower, tickUpper));
-
-  let amount0 = 0; // token side (token0 orientation)
-  let amount1 = 0; // eth side
-  if (sqrtP <= pa) {
-    amount0 = 1; // all token, position sits above price
-  } else if (sqrtP >= pb) {
-    amount1 = 1; // all eth, position sits below price
-  } else {
-    // Normalise L = 1 for the ratio.
-    amount0 = (pb - sqrtP) / (sqrtP * pb);
-    amount1 = sqrtP - pa;
-  }
-  // Weight by price so the split is value-denominated.
-  const tokenValue = amount0 * sqrtP * sqrtP;
-  const ethValue = amount1;
-  const total = tokenValue + ethValue;
-  if (total <= 0) return { ethRatio: 0.5, tokenRatio: 0.5 };
-  return { ethRatio: ethValue / total, tokenRatio: tokenValue / total };
-}
-
-/**
- * Solve the concentrated zap split: how much of `totalEth` should swap for
- * tokens so the bought tokens pair exactly with the remaining ETH at the
- * range's required ratio. Bisection — deterministic and dust-free enough.
- */
-export function solveConcentratedZapSwap(
-  reserveEth: bigint,
-  reserveToken: bigint,
-  totalEth: bigint,
-  tokenPerEth: number,
-): bigint {
-  if (totalEth <= 0n || reserveEth <= 0n || tokenPerEth <= 0) return 0n;
-  let lo = 0n;
-  let hi = totalEth;
-  for (let i = 0; i < 64; i++) {
-    const mid = (lo + hi) / 2n;
-    const out = Number(getAmountOut(mid, reserveEth, reserveToken));
-    const paired = Number(totalEth - mid) * tokenPerEth;
-    if (out < paired) lo = mid;
-    else hi = mid;
-  }
-  return (lo + hi) / 2n;
-}
-
-/** tokenWei per ethWei implied by reserves (float, for preview ratios). */
-export function tokenPerEth(reserveEth: bigint, reserveToken: bigint): number {
-  if (reserveEth <= 0n) return 0;
-  return Number(reserveToken) / Number(reserveEth);
+export function spotPrice(reserveA: bigint, decimalsA: number, reserveB: bigint, decimalsB: number): number {
+  if (reserveA <= 0n || reserveB <= 0n) return 0;
+  // Scale to 18 decimals of precision before converting to a float.
+  const scaled = mulDiv(reserveA * 10n ** BigInt(decimalsB), 10n ** 18n, reserveB * 10n ** BigInt(decimalsA));
+  return Number(scaled) / 1e18;
 }

@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider } from "wagmi";
-import { config } from "./lib/wagmi";
-import { EXPLORER_URL, ROBINHOOD_CHAIN_ID, ROBINHOOD_RPC_URL } from "./lib/constants";
+import { NearWalletProvider } from "./context/NearWalletContext";
+import { EXPLORER_URL, NODE_URL, REF_FINANCE_CONTRACT_ID } from "./config/near";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { ToastProvider } from "./components/Toasts";
 import { SplashLoader } from "./components/SplashLoader";
 import { Navbar } from "./components/Navbar";
 import { IconExternal } from "./components/icons";
 import { Logo } from "./components/Logo";
-import { BuyPage, InfoPage, LandingPage, LaunchPoolPage } from "./pages";
+import { InfoPage, InjectPage, LandingPage, SwapPage } from "./pages";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,8 +42,8 @@ function Footer() {
       <div className="flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2">
           <Logo size={20} />
-          <span className="font-display text-sm font-semibold text-ink">ponspool</span>
-          <span className="font-mono text-[10px] text-faint">· thickening the pond since block 1</span>
+          <span className="font-display text-sm font-semibold text-ink">nearpool</span>
+          <span className="font-mono text-[10px] text-faint">· deepening Ref pools, one batch at a time</span>
         </div>
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[10px] text-faint" aria-label="Footer navigation">
           <Link to="/" className="transition-colors hover:text-ink">home</Link>
@@ -58,8 +57,8 @@ function Footer() {
         </nav>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[9.5px] text-faint">
-        <span>chain {ROBINHOOD_CHAIN_ID}</span>
-        <span className="hidden sm:inline">rpc {ROBINHOOD_RPC_URL.replace("https://", "")}</span>
+        <span>near mainnet · {REF_FINANCE_CONTRACT_ID}</span>
+        <span className="hidden sm:inline">rpc {NODE_URL.replace("https://", "")}</span>
         <span>no custody · no middlemen · no hidden fees</span>
       </div>
     </footer>
@@ -69,7 +68,6 @@ function Footer() {
 function Shell() {
   const [splashDone, setSplashDone] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const [connectOpen, setConnectOpen] = useState(false);
   const navigate = useNavigate();
 
   return (
@@ -79,13 +77,16 @@ function Shell() {
       {!splashDone && <SplashLoader onReveal={() => setRevealed(true)} onDone={() => setSplashDone(true)} />}
 
       <div className={revealed ? "" : "opacity-0"}>
-        <Navbar connectOpen={connectOpen} setConnectOpen={setConnectOpen} />
+        <Navbar />
 
         <main className="relative z-10 mx-auto max-w-5xl px-4 pt-32 pb-16 sm:px-6 sm:pt-36">
           <Routes>
-            <Route path="/" element={<LandingPage onLaunch={() => navigate("/launch-pool")} onBuy={() => navigate("/buy")} />} />
-            <Route path="/launch-pool" element={<LaunchPoolPage onBuy={() => navigate("/buy")} onConnect={() => setConnectOpen(true)} />} />
-            <Route path="/buy" element={<BuyPage onConnect={() => setConnectOpen(true)} />} />
+            <Route path="/" element={<LandingPage onInject={() => navigate("/inject")} onSwap={() => navigate("/swap")} />} />
+            <Route path="/inject" element={<InjectPage onSwap={() => navigate("/swap")} />} />
+            <Route path="/swap" element={<SwapPage onInject={() => navigate("/inject")} />} />
+            {/* Legacy routes from the EVM build. */}
+            <Route path="/launch-pool" element={<Navigate to="/inject" replace />} />
+            <Route path="/buy" element={<Navigate to="/swap" replace />} />
             <Route path="/how-it-works" element={<InfoPage kind="how-it-works" />} />
             <Route path="/docs" element={<InfoPage kind="docs" />} />
             <Route path="/terms" element={<InfoPage kind="terms" />} />
@@ -103,15 +104,15 @@ function Shell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <NearWalletProvider>
           <ThemeProvider>
             <ToastProvider>
               <Shell />
             </ToastProvider>
           </ThemeProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
+        </NearWalletProvider>
+      </QueryClientProvider>
     </BrowserRouter>
   );
 }

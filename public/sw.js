@@ -1,4 +1,4 @@
-// ponspool service worker
+// nearpool service worker
 //
 // Purpose: make the app installable (PWA on desktop/mobile, and wrappable
 // as an Android TWA) and give it light offline resilience. Deliberately
@@ -9,7 +9,7 @@
 //
 // Bump CACHE_NAME whenever this file's caching behavior changes; the
 // activate handler clears any cache that doesn't match the current name.
-const CACHE_NAME = "ponspool-shell-v1";
+const CACHE_NAME = "nearpool-shell-v1";
 const SHELL_URL = "/";
 
 self.addEventListener("install", (event) => {

@@ -1,15 +1,11 @@
 services:
   - type: web
-    name: ponspool
+    name: nearpool
     runtime: node
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: node server.mjs
-    # server.mjs itself handles every route — API proxies (/api/rpc,
-    # /api/explorer, /api/price/*, /api/pons-launches/search), the SPA
-    # fallback, and static asset caching. Render's static-site "rewrite"
-    # rules only ever substitute path segments; they don't forward an
-    # incoming request's query string to a fixed external destination, so
-    # query-string-based proxying (module/action/address for the block
-    # explorer, etc.) silently failed under `runtime: static`. Running the
-    # real Node server is what makes that actually work.
+    # server.mjs serves the SPA (with history fallback and immutable caching
+    # for hashed assets) and the shared activity feed (/api/activity/*),
+    # which re-verifies every published injection against NEAR RPC.
+    # Set TURSO_DATABASE_URL / TURSO_AUTH_TOKEN for durable feed storage.

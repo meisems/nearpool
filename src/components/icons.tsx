@@ -3,7 +3,6 @@ import {
   Sun,
   Moon,
   Wallet,
-  Plugs,
   CircleNotch,
   Check,
   WarningCircle,
@@ -42,7 +41,7 @@ import {
  *
  * Weight standard: "regular" everywhere, "bold" for a handful of glyphs
  * that read as too thin at small sizes (chevrons, close, checks, arrows).
- * Brand marks (the pond emblem, the ETH diamond) stay hand-drawn — they're
+ * Brand marks (the pond emblem, the NEAR mark) stay hand-drawn — they're
  * identity marks, not UI iconography, so they're kept as bespoke SVG
  * rather than swapped for a generic library glyph.
  */
@@ -97,10 +96,6 @@ export const IconMark = IconPondMark;
 export const IconSun = phosphor(Sun);
 export const IconMoon = phosphor(Moon);
 
-/** WalletConnect-style pairing glyph, mapped to Phosphor's "Plugs" (connect
- *  / pair) — no 1:1 walletconnect glyph exists in the Phosphor set. */
-export const IconWalletConnect = phosphor(Plugs);
-
 export const IconWallet = phosphor(Wallet);
 
 /** Always paired with `animate-spin` at call sites — CircleNotch is
@@ -135,15 +130,10 @@ export const IconNft = phosphor(ImageSquare);
 export const IconRange = phosphor(ArrowsHorizontal, "bold");
 export const IconAtom = phosphor(Atom);
 
-/** Ethereum diamond mark — bespoke brand glyph, kept hand-drawn for
- *  fidelity (no generic "eth" icon in Phosphor matches the real mark). */
-export const IconEth = ({ size = 16, ...props }: IconProps) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" aria-hidden="true" {...props}>
-    <path d="M12 3v6.6l5 2.3Z" opacity="0.55" />
-    <path d="M12 3 7 11.9l5-2.3Z" />
-    <path d="m12 14 5-2.6-5 9.1Z" opacity="0.55" />
-    <path d="m12 20.5-5-9.1 5 2.6Z" />
-    <path d="m17 11.4-5 2.6V9.1Z" opacity="0.35" />
-    <path d="M7 11.4 12 9.1v4.9Z" opacity="0.8" />
+/** NEAR Protocol "N" mark — bespoke brand glyph, kept as hand-authored SVG
+ *  for fidelity (Phosphor has no NEAR logo). */
+export const IconNear = ({ size = 16, ...props }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+    <path d="M17.07 3.93l-3.35 4.97c-.23.34.21.75.53.47l3.3-2.86c.09-.08.23-.02.23.1v8.95c0 .12-.16.17-.23.08L7.56 3.43A1.72 1.72 0 0 0 6.25 2.8h-.35A1.9 1.9 0 0 0 4 4.7v12.6a1.9 1.9 0 0 0 3.52 1l3.35-4.97c.23-.34-.21-.75-.53-.47l-3.3 2.86c-.09.08-.23.02-.23-.1V6.67c0-.12.16-.17.23-.08l9.98 11.94c.33.39.8.6 1.31.6h.35a1.9 1.9 0 0 0 1.9-1.9V4.7a1.9 1.9 0 0 0-3.51-.77z" />
   </svg>
 );

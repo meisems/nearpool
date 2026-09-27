@@ -10,12 +10,12 @@ const ThemeCtx = createContext<{ theme: Theme; toggle: () => void }>({
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === "undefined") return "dark";
-    return (localStorage.getItem("ponspool.theme") as Theme) || "dark";
+    return (localStorage.getItem("nearpool.theme") as Theme) || "dark";
   });
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
-    localStorage.setItem("ponspool.theme", theme);
+    localStorage.setItem("nearpool.theme", theme);
   }, [theme]);
 
   const toggle = () => {

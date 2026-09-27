@@ -122,7 +122,7 @@ export function SplashLoader({
             transition={spring}
             className="font-display text-[38px] leading-none font-semibold tracking-tight text-ink"
           >
-            ponspool
+            nearpool
           </motion.div>
         </div>
 
@@ -133,12 +133,12 @@ export function SplashLoader({
           transition={{ duration: 0.2 }}
           className="mt-2 font-mono text-[11px] tracking-[0.18em] text-muted"
         >
-          thickening the pond.
+          deepening the pool.
         </motion.div>
       </motion.div>
 
       <div className="absolute bottom-8 font-mono text-[10px] tracking-[0.14em] text-faint">
-        robinhood chain · 4663 · tap to skip
+        near mainnet · ref finance · tap to skip
       </div>
     </motion.div>
   );
