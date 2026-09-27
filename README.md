@@ -14,8 +14,10 @@ into a single wallet approval:
 4. **Injecting LP** — `add_liquidity` on `v2.ref-finance.near` (100 TGas) with slippage-guarded
    `min_amounts`.
 
-Tokens can be tracked (saved per browser): price, change since tracking, pool depth and your
-position. A swap page sources the counter asset.
+No pool yet? Create one from the token page (Ref `add_simple_pool`), then add the first liquidity,
+which sets the price. Tokens can be tracked (saved per browser): price, change since tracking,
+pool depth and your position. Swaps route directly or through one intermediate token (e.g.
+NEAR → USDC → token) using Ref's multi-step instant swap.
 
 Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`, `/swap?out=<token>`.
 

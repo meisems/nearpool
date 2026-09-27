@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useAccountSnapshot, useFtMetadata, usePairPools, usePlatformFee } from "../hooks/useRefData";
+import { useAccountSnapshot, useFtMetadata, usePlatformFee, useSwapRoutes } from "../hooks/useRefData";
 import { useRefSwap } from "../hooks/useRefSwap";
 import {
   explorerTxUrl,
@@ -12,9 +12,9 @@ import {
   SLIPPAGE_OPTIONS_BPS,
   WRAP_NEAR_CONTRACT_ID,
 } from "../config/near";
-import { displaySymbol, PlanError, planSwap } from "../lib/refFinance";
+import { bestRoute, displaySymbol, PlanError, planSwap, quoteRoute, spotQuoteRoute } from "../lib/refFinance";
 import { fmtAmount, parseUnits, rawToInput, shortHash } from "../lib/format";
-import { applySlippage, estimateSwapOut, maxBig, swapPriceImpactBps } from "../utils/zapMath";
+import { applySlippage, maxBig } from "../utils/zapMath";
 import { useToast } from "./Toasts";
 import { TokenAvatar } from "./TokenAvatar";
 import { TokenSelectModal } from "./TokenSelectModal";
@@ -61,21 +61,25 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
   const symIn = displaySymbol(tokenIn, metaIn.data);
   const symOut = tokenOut === WRAP_NEAR_CONTRACT_ID ? "wNEAR" : displaySymbol(tokenOut, metaOut.data);
 
-  const pools = usePairPools(tokenIn, tokenOut);
-  const pool = pools.data?.[0] ?? null;
+  const routes = useSwapRoutes(tokenIn, tokenOut);
   const snapshot = useAccountSnapshot([tokenIn, tokenOut]);
   const swap = useRefSwap();
   const feeQ = usePlatformFee();
   const fee = feeQ.data ?? null;
 
   const amountIn = useMemo(() => (metaIn.data ? parseUnits(amountInput, decIn) ?? 0n : 0n), [amountInput, decIn, metaIn.data]);
-  const inIdx = pool ? pool.tokenIds.indexOf(tokenIn) : -1;
-  const outIdx = pool ? pool.tokenIds.indexOf(tokenOut) : -1;
-  const ready = !!pool && inIdx >= 0 && outIdx >= 0;
-  const expectedOut = ready ? estimateSwapOut(amountIn, pool.reserves[inIdx], pool.reserves[outIdx], pool.totalFeeBps) : 0n;
+  // Best route for the typed amount (or for 1 unit, to show a rate before typing).
+  const unit = 10n ** BigInt(decIn);
+  const best = useMemo(() => bestRoute(routes.data ?? [], amountIn > 0n ? amountIn : unit), [routes.data, amountIn, unit]);
+  const route = best?.route ?? null;
+  const ready = !!route;
+  const expectedOut = route && amountIn > 0n ? best!.out : 0n;
   const minOut = expectedOut > 0n ? applySlippage(expectedOut, slipBps) : 0n;
-  const impactBps = ready ? swapPriceImpactBps(amountIn, expectedOut, pool.reserves[inIdx], pool.reserves[outIdx]) : 0;
-  const unitOut = ready ? estimateSwapOut(10n ** BigInt(decIn), pool.reserves[inIdx], pool.reserves[outIdx], pool.totalFeeBps) : 0n;
+  const spotOut = route && amountIn > 0n ? spotQuoteRoute(route, amountIn) : 0n;
+  const impactBps = spotOut > expectedOut && spotOut > 0n ? Number(((spotOut - expectedOut) * 10_000n) / spotOut) : 0;
+  const unitOut = route ? quoteRoute(route, unit) : 0n;
+  const middleId = route && route.path.length === 3 ? route.path[1] : null;
+  const middleMeta = useFtMetadata(middleId);
 
   const inState = snapshot.data?.tokens[tokenIn];
   const native = snapshot.data?.native.available ?? 0n;
@@ -84,14 +88,14 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
     : 0n;
 
   const planError = useMemo(() => {
-    if (!snapshot.data || !pool || amountIn <= 0n) return null;
+    if (!snapshot.data || !route || amountIn <= 0n) return null;
     try {
-      planSwap(snapshot.data, { pool, tokenIn, tokenOut, amountIn, slippageBps: slipBps, payWithNative: true, fee });
+      planSwap(snapshot.data, { pools: route.pools, path: route.path, amountIn, slippageBps: slipBps, payWithNative: true, fee });
       return null;
     } catch (e) {
       return e instanceof PlanError ? e.message : e instanceof Error ? e.message : String(e);
     }
-  }, [snapshot.data, pool, tokenIn, tokenOut, amountIn, slipBps, fee]);
+  }, [snapshot.data, route, amountIn, slipBps, fee]);
 
   useEffect(() => {
     if (swap.phase === "success") setAmountInput("");
@@ -99,10 +103,12 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swap.phase]);
 
-  const blocker = pools.isLoading
-    ? "Finding pool…"
-    : !pool
-      ? "No pool for this pair"
+  const blocker = routes.isLoading
+    ? "Finding route…"
+    : routes.isError
+      ? "Couldn't load pools"
+      : !route
+      ? "No route for this pair"
       : amountIn <= 0n
         ? "Enter an amount"
         : !snapshot.data || feeQ.isLoading
@@ -208,7 +214,13 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
               <div className="flex justify-between"><dt className="text-muted">Price impact</dt><dd className={`tabular ${impactBps > 300 ? "text-danger" : "text-ink"}`}>{(impactBps / 100).toFixed(2)}%</dd></div>
             </>
           )}
-          <div className="flex justify-between"><dt className="text-muted">Pool</dt><dd className="text-ink tabular">#{pool.id} · {(pool.totalFeeBps / 100).toFixed(2)}%</dd></div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted">Route</dt>
+            <dd className="truncate text-right text-ink tabular">
+              {middleId ? `${symIn} → ${displaySymbol(middleId, middleMeta.data)} → ${symOut}` : `${symIn} → ${symOut}`}
+              <span className="text-faint"> · {route.pools.map((p) => `#${p.id}`).join(", ")}</span>
+            </dd>
+          </div>
           {fee && <div className="flex justify-between"><dt className="text-muted">Fee</dt><dd className="text-ink tabular">{fmtAmount(fee.amount, NEAR_DECIMALS)} NEAR</dd></div>}
         </dl>
       )}
@@ -234,7 +246,7 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
         className="mt-4 w-full"
         disabled={!!accountId && (swap.busy || !!blocker)}
         loading={swap.busy}
-        onClick={accountId ? () => pool && void swap.run({ pool, tokenIn, tokenOut, amountIn, slippageBps: slipBps, payWithNative: true }) : signIn}
+        onClick={accountId ? () => route && void swap.run({ pools: route.pools, path: route.path, amountIn, slippageBps: slipBps, payWithNative: true }) : signIn}
       >
         {!accountId ? "Connect wallet" : swap.busy ? (swap.phase === "checking-storage" ? "Checking…" : "Confirm in wallet") : blocker ?? "Swap"}
       </Button>

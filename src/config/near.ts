@@ -72,6 +72,10 @@ export const GAS = {
   ADD_LIQUIDITY: 100n * TGAS,
   /** NEP-141 `ft_transfer_call` carrying a single-hop Ref instant swap. */
   SWAP: 180n * TGAS,
+  /** Ref `add_simple_pool`. */
+  ADD_SIMPLE_POOL: 50n * TGAS,
+  /** Two-hop instant swap (Ref SDK uses up to 300 TGas for routed swaps). */
+  SWAP_MULTI_HOP: 280n * TGAS,
 } as const;
 
 /** Hard protocol limit for a single transaction's prepaid gas. */
@@ -111,6 +115,12 @@ export const REF_STORAGE_PER_TOKEN = 2_500_000_000_000_000_000_000n; // 0.0025 N
  * liquidity providers attach exactly 1 yoctoNEAR.
  */
 export const LP_STORAGE_DEPOSIT = 10_000_000_000_000_000_000_000n; // 0.01 NEAR
+
+/**
+ * Attached to `add_simple_pool` to pay for the new pool's storage. Ref
+ * charges the actual storage used and refunds the rest.
+ */
+export const POOL_CREATION_DEPOSIT = 100_000_000_000_000_000_000_000n; // 0.1 NEAR
 
 /** Native NEAR kept back from "max" inputs and balance checks to pay gas. */
 export const NEAR_GAS_RESERVE = 50_000_000_000_000_000_000_000n; // 0.05 NEAR
