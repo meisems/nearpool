@@ -37,7 +37,9 @@ function applyTheme(theme: Theme) {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => (typeof window === "undefined" ? "dark" : readStoredTheme()));
 
-  useEffect(() => applyTheme(theme), [theme]);
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const toggle: ThemeCtxValue["toggle"] = (origin) => {
     const next: Theme = theme === "dark" ? "light" : "dark";
