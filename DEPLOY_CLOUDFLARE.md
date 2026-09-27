@@ -70,7 +70,8 @@ npm run cf:deploy           # vite build → wrangler deploy
 wrangler uploads `dist/` as static assets and `worker/index.ts` as the
 Worker. Only `/api/*` runs Worker code (`run_worker_first`). Every other
 path is served from the asset store, and unknown paths fall back to
-`index.html` so client routes like `/inject` and `/swap` load directly.
+`index.html` so client routes like `/swap` and token pages such as
+`/t/usdt.tether-token.near` load directly.
 
 Your site is live at `https://nearpool.<your-subdomain>.workers.dev`.
 
@@ -190,7 +191,7 @@ the feed is simply empty there.
 
 ```bash
 curl https://<your-host>/api/activity/posts          # {"posts":[...]}
-curl -I https://<your-host>/inject                   # 200, text/html (SPA fallback)
+curl -I -H "accept: text/html" https://<your-host>/t/usdt.tether-token.near   # 200, text/html (SPA fallback, dotted route)
 curl -I https://<your-host>/sw.js                    # Cache-Control: no-cache
 ```
 
@@ -202,8 +203,9 @@ landing-page feed within about 15 seconds.
 - **Caching.** `public/_headers` makes `/assets/*` immutable for a year
   (the filenames are content-hashed) and keeps `sw.js` and the manifest
   uncached so visitors never get stuck on an old service worker.
-- **Legacy routes.** `/launch-pool` and `/buy` redirect in the client to
-  `/inject` and `/swap`.
+- **Routes.** `/` (paste a token), `/t/<token>` (token page, `?pool=<id>`
+  to pick a pool), `/pool/<id>`, `/track`, `/swap`. Older `/inject`,
+  `/launch-pool` and `/buy` links redirect in the client.
 - **Other hosts.** `server.mjs` and `render.yaml` remain for Node hosting
   (Render etc.), using Turso instead of D1. `vercel.json` serves the static
   site only.

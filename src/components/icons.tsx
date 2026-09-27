@@ -28,6 +28,11 @@ import {
   ImageSquare,
   ArrowsHorizontal,
   Atom,
+  Plus,
+  Star,
+  List,
+  ArrowUpRight,
+  ClipboardText,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
@@ -129,6 +134,12 @@ export const IconZap = phosphor(Lightning, "fill");
 export const IconNft = phosphor(ImageSquare);
 export const IconRange = phosphor(ArrowsHorizontal, "bold");
 export const IconAtom = phosphor(Atom);
+export const IconPlus = phosphor(Plus, "bold");
+export const IconStar = phosphor(Star);
+export const IconStarFill = phosphor(Star, "fill");
+export const IconList = phosphor(List, "bold");
+export const IconArrowUpRight = phosphor(ArrowUpRight, "bold");
+export const IconPaste = phosphor(ClipboardText);
 
 /** NEAR Protocol "N" mark — bespoke brand glyph, kept as hand-authored SVG
  *  for fidelity (Phosphor has no NEAR logo). */

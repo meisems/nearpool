@@ -1,203 +1,344 @@
-import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { CreatorTerminal } from "../components/CreatorTerminal";
-import { Hero, ProtocolStrip, TransactionFeed } from "../components/Landing";
+import { useEffect, type ReactNode } from "react";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { explorerAccountUrl, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
+import { useNearWallet } from "../context/NearWalletContext";
+import { useFtMetadata, usePool, useTokenPools } from "../hooks/useRefData";
+import { useTokenMarket } from "../hooks/useTokenMarket";
+import { useWatchlist } from "../hooks/useWatchlist";
+import { isValidAccountId } from "../lib/near";
+import { counterToken, displaySymbol, type RefPool } from "../lib/refFinance";
+import { fmtAmount, shortAccount } from "../lib/format";
+import { ActivityList } from "../components/ActivityList";
+import { InjectPanel } from "../components/InjectPanel";
+import { QuickTokens, TokenSearch } from "../components/TokenSearch";
+import { TrackedList } from "../components/TrackedList";
 import { SwapCard } from "../components/SwapCard";
 import { TokenAvatar } from "../components/TokenAvatar";
-import { IconArrowRight, IconDropletPlus, IconShield, IconSwap, IconZap } from "../components/icons";
+import { Button, Card, CopyButton, fmtPrice, Skeleton, Stat } from "../components/ui";
+import { IconArrowUpRight, IconExternal, IconStar, IconStarFill, IconSwap } from "../components/icons";
 
-function PageHeader({ eyebrow, title, body }: { eyebrow: string; title: ReactNode; body: ReactNode }) {
+function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
-    <header className="max-w-3xl">
-      <div className="inline-flex items-center gap-2 rounded-full border border-line bg-card/70 px-3.5 py-1.5 font-mono text-[10.5px] tracking-[0.14em] text-muted uppercase">
-        <span className="h-1.5 w-1.5 rounded-full bg-vip vip-pulse" />
-        {eyebrow}
-      </div>
-      <h1 className="mt-5 font-display text-[40px] leading-[1.03] font-semibold tracking-tight text-ink sm:text-[56px]">{title}</h1>
-      <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-muted">{body}</p>
-    </header>
-  );
-}
-
-export function LandingPage({ onInject, onSwap }: { onInject: () => void; onSwap: () => void }) {
-  return (
-    <div>
-      <Hero onInject={onInject} onSwap={onSwap} />
-      <TransactionFeed />
-      <ProtocolStrip />
-
-      <section className="relative mt-16 grid gap-3 sm:mt-20 sm:grid-cols-2">
-        <Link to="/docs" className="group rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft) transition-transform hover:-translate-y-1">
-          <span className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">start here</span>
-          <h2 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">Read the protocol docs</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">Understand storage registration, the Ref deposit model, the exact calls in each batch, and the math behind min_amounts.</p>
-          <span className="mt-5 flex items-center gap-2 text-xs font-semibold text-accent">open docs <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
-        </Link>
-        <Link to="/how-it-works" className="group rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft) transition-transform hover:-translate-y-1">
-          <span className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">three moves</span>
-          <h2 className="mt-3 font-display text-xl font-semibold tracking-tight text-ink">See how the pool works</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted">A short walkthrough from connecting a NEAR wallet to holding Ref LP shares.</p>
-          <span className="mt-5 flex items-center gap-2 text-xs font-semibold text-accent">how it works <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
-        </Link>
-      </section>
+    <div className="flex items-center justify-between">
+      <h2 className="font-display text-base font-semibold text-ink">{title}</h2>
+      {action}
     </div>
   );
 }
 
-export function InjectPage({ onSwap }: { onSwap: () => void }) {
+/* ================================================================ home */
+
+export function HomePage() {
   return (
     <div>
-      <PageHeader
-        eyebrow="lp injector · non-custodial"
-        title={<>Deepen a pool.<br /><span className="text-accent">One signature.</span></>}
-        body={<>Pick a common pair or enter any Ref Finance pool id. nearpool reads the live reserves, sizes the counter asset exactly, and batches storage, wrapping, deposits and <span className="font-mono">add_liquidity</span> into one wallet approval.</>}
-      />
+      <section className="mx-auto max-w-2xl pt-4 sm:pt-12">
+        <h1 className="text-center font-display text-[34px] leading-tight font-semibold tracking-tight text-ink sm:text-5xl">
+          Add liquidity to any <span className="text-accent">NEAR</span> token
+        </h1>
+        <div className="mt-8">
+          <TokenSearch autoFocus />
+        </div>
+        <div className="mt-4 flex justify-center">
+          <QuickTokens />
+        </div>
+      </section>
 
-      <section className="mt-10 grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        <CreatorTerminal onSwap={onSwap} />
-        <aside className="space-y-3">
-          <div className="rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft)">
-            <div className="flex items-center gap-2 text-sm font-semibold text-ink"><IconShield size={17} className="text-accent" /> injection pipeline</div>
-            <div className="mt-5 space-y-4">
-              {[
-                ["01", "Checking storage", "Reads NEP-145 registrations for you and Ref on both tokens, plus your Ref account storage."],
-                ["02", "Wrapping NEAR", "near_deposit on wrap.near — only when the NEAR leg exceeds your wNEAR and Ref balances."],
-                ["03", "Depositing to Ref", "ft_transfer_call per token (50 TGas, 1 yocto). Existing Ref deposits are used first."],
-                ["04", "Injecting LP", "add_liquidity with min_amounts at your slippage tolerance (100 TGas)."],
-              ].map(([n, label, body]) => (
-                <div key={n} className="flex gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accentsoft font-mono text-[10px] font-semibold text-accentstrong">{n}</span>
-                  <div><div className="text-xs font-semibold text-ink">{label}</div><p className="mt-1 text-[11px] leading-relaxed text-muted">{body}</p></div>
-                </div>
+      <div className="mt-12 grid gap-4 lg:grid-cols-2">
+        <Card className="p-4 sm:p-5">
+          <SectionHeader title="Tracked" action={<Link to="/track" className="text-sm text-muted hover:text-ink">View all</Link>} />
+          <div className="mt-2">
+            <TrackedList limit={5} empty={<p className="py-6 text-center text-sm text-faint">Star a token to track it here</p>} />
+          </div>
+        </Card>
+        <Card className="p-4 sm:p-5">
+          <SectionHeader title="Recent" />
+          <div className="mt-2">
+            <ActivityList />
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================ token */
+
+function PoolChip({ pool, tokenId, active, onClick }: { pool: RefPool; tokenId: string; active: boolean; onClick: () => void }) {
+  const counterId = counterToken(pool, tokenId);
+  const meta = useFtMetadata(counterId);
+  return (
+    <button
+      onClick={onClick}
+      className={`flex h-9 shrink-0 items-center gap-2 rounded-xl border pr-3 pl-1.5 text-sm transition ${
+        active ? "border-accent bg-accentsoft text-ink" : "border-line bg-card text-muted hover:text-ink"
+      }`}
+    >
+      <TokenAvatar tokenId={counterId} size={22} />
+      <span className="font-medium">{displaySymbol(counterId, meta.data)}</span>
+      <span className="text-xs text-faint">#{pool.id}</span>
+    </button>
+  );
+}
+
+function Notice({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <Card className="mx-auto max-w-xl p-6 text-center">
+      <h1 className="font-display text-xl font-semibold text-ink">{title}</h1>
+      {children && <div className="mt-4">{children}</div>}
+    </Card>
+  );
+}
+
+export function TokenPage() {
+  const { tokenId: raw = "" } = useParams();
+  const tokenId = raw.trim().toLowerCase();
+  const valid = isValidAccountId(tokenId);
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { accountId } = useNearWallet();
+  const watch = useWatchlist();
+  const { setPool } = watch;
+
+  const meta = useFtMetadata(valid ? tokenId : null);
+  const pools = useTokenPools(valid && meta.data ? tokenId : null);
+  const poolParam = params.get("pool");
+  const requestedPool = poolParam !== null && /^\d{1,9}$/.test(poolParam) ? Number(poolParam) : null;
+  const poolId = requestedPool ?? pools.data?.[0]?.id ?? null;
+  const m = useTokenMarket(tokenId, poolId);
+  const tracked = watch.isTracked(tokenId);
+  const symbol = displaySymbol(tokenId, meta.data);
+  const poolHoldsToken = !!m.pool && m.pool.tokenIds.includes(tokenId) && m.pool.tokenIds.length === 2;
+
+  useEffect(() => {
+    document.title = meta.data ? `${symbol} · nearpool` : "Token · nearpool";
+  }, [meta.data, symbol]);
+
+  // Keep a tracked token pointed at the pool the user is looking at.
+  useEffect(() => {
+    if (tracked && poolId !== null && m.price > 0) setPool(tokenId, poolId, m.price);
+  }, [tracked, poolId, m.price, tokenId, setPool]);
+
+  if (!valid) {
+    return (
+      <Notice title="That's not a NEAR address">
+        <TokenSearch size="md" />
+      </Notice>
+    );
+  }
+  if (tokenId === WRAP_NEAR_CONTRACT_ID) return <Navigate to="/" replace />;
+  if (meta.isError) {
+    return (
+      <Notice title="Couldn't read this token">
+        <p className="mb-4 font-mono text-sm break-all text-muted">{tokenId}</p>
+        <div className="flex justify-center gap-2">
+          <Button variant="secondary" onClick={() => void meta.refetch()}>Retry</Button>
+          <Button variant="ghost" onClick={() => navigate("/")}>Back</Button>
+        </div>
+      </Notice>
+    );
+  }
+
+  const toggleTrack = () => {
+    if (tracked) watch.untrack(tokenId);
+    else if (poolId !== null) watch.track({ tokenId, poolId, priceAtAdd: m.price });
+  };
+
+  const noPools = pools.isSuccess && pools.data.length === 0 && requestedPool === null;
+
+  return (
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+        {/* identity */}
+        <Card className="min-w-0 p-4 sm:p-5 lg:col-start-1 lg:row-start-1">
+          <div className="flex items-start gap-3.5">
+            {meta.data ? <TokenAvatar tokenId={tokenId} size={52} /> : <Skeleton className="h-[52px] w-[52px] rounded-full" />}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate font-display text-xl font-semibold text-ink sm:text-2xl">{meta.data ? symbol : <Skeleton className="h-7 w-24" />}</h1>
+              <div className="truncate text-sm text-muted">{meta.data?.name}</div>
+              <div className="mt-1.5 flex items-center gap-0.5 text-xs text-faint">
+                <span className="truncate font-mono" title={tokenId}>{shortAccount(tokenId, 36)}</span>
+                <CopyButton value={tokenId} />
+                <a href={explorerAccountUrl(tokenId)} target="_blank" rel="noreferrer" aria-label="View on nearblocks" title="nearblocks" className="rounded-lg p-1.5 hover:bg-card2 hover:text-ink">
+                  <IconExternal size={13} />
+                </a>
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button variant="secondary" size="md" onClick={() => navigate(`/swap?out=${encodeURIComponent(tokenId)}`)} title={`Swap for ${symbol}`}>
+                <IconSwap size={15} /> <span className="hidden sm:inline">Swap</span>
+              </Button>
+              <Button variant="secondary" onClick={toggleTrack} disabled={!tracked && poolId === null} aria-pressed={tracked}>
+                {tracked ? <IconStarFill size={15} className="text-accent" /> : <IconStar size={15} />}
+                <span className="hidden sm:inline">{tracked ? "Tracked" : "Track"}</span>
+              </Button>
+            </div>
+          </div>
+
+          {(pools.data?.length ?? 0) > 1 && (
+            <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1">
+              {pools.data!.slice(0, 8).map((p) => (
+                <PoolChip key={p.id} pool={p} tokenId={tokenId} active={p.id === poolId} onClick={() => setParams({ pool: String(p.id) }, { replace: true })} />
               ))}
             </div>
+          )}
+        </Card>
+
+      {/* action */}
+      <div className="min-w-0 lg:sticky lg:top-24 lg:col-start-2 lg:row-span-3 lg:row-start-1">
+        {m.pool && poolHoldsToken ? (
+          <InjectPanel pool={m.pool} tokenId={tokenId} tracked={tracked} onTrack={toggleTrack} />
+        ) : !noPools ? (
+          <Card className="p-5">
+            <Skeleton className="h-6 w-32" />
+            <Skeleton className="mt-4 h-[74px] w-full rounded-xl" />
+            <Skeleton className="mt-2 h-[74px] w-full rounded-xl" />
+            <Skeleton className="mt-4 h-12 w-full rounded-xl" />
+          </Card>
+        ) : null}
+      </div>
+        {/* market + position */}
+        {noPools ? (
+          <Card className="min-w-0 p-6 text-center lg:col-start-1 lg:row-start-2">
+            <p className="text-ink">No Ref pool for {symbol} yet</p>
+            <a href="https://app.ref.finance/pools" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">
+              Create one on Ref <IconArrowUpRight size={13} />
+            </a>
+          </Card>
+        ) : (
+          <Card className="min-w-0 p-4 sm:p-5 lg:col-start-1 lg:row-start-2">
+            {m.loading || pools.isLoading ? (
+              <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+                {[0, 1, 2, 3].map((i) => <div key={i}><Skeleton className="h-3 w-14" /><Skeleton className="mt-2 h-6 w-20" /></div>)}
+              </div>
+            ) : m.pool && poolHoldsToken ? (
+              <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+                <Stat label="Price" value={`${fmtPrice(m.price)} ${m.counterSymbol}`} sub={`per ${symbol}`} />
+                <Stat label="Liquidity" value={`${fmtAmount(m.counterReserve, m.counterDecimals)} ${m.counterSymbol}`} sub={`${fmtAmount(m.tokenReserve, m.decimals)} ${symbol}`} />
+                <Stat
+                  label="Pool"
+                  value={
+                    <a href={refPoolUrl(m.pool.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-accent">
+                      #{m.pool.id} <IconArrowUpRight size={13} />
+                    </a>
+                  }
+                  sub={`${(m.pool.totalFeeBps / 100).toFixed(2)}% fee`}
+                />
+                <Stat
+                  label="Your position"
+                  value={!accountId ? "—" : m.shares > 0n ? `${(m.shareBps / 100).toFixed(2)}%` : "None"}
+                  sub={m.shares > 0n ? `${fmtAmount(m.positionToken, m.decimals)} ${symbol} + ${fmtAmount(m.positionCounter, m.counterDecimals)} ${m.counterSymbol}` : undefined}
+                />
+              </div>
+            ) : (
+              <p className="py-2 text-center text-sm text-muted">{m.error || m.pool ? `Pool #${poolId} doesn't hold ${symbol}` : "Pool unavailable"}</p>
+            )}
+          </Card>
+        )}
+
+        <Card className="min-w-0 p-4 sm:p-5 lg:col-start-1 lg:row-start-3">
+          <SectionHeader title="Recent" />
+          <div className="mt-2">
+            <ActivityList tokenId={tokenId} limit={8} />
           </div>
-          <div className="rounded-3xl border border-line bg-card2/60 p-5">
-            <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">missing the counter asset?</div>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Swap for it on Ref first — the output lands in your wallet and the injector picks it up automatically.</p>
-            <button onClick={onSwap} className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent">open swap <IconArrowRight size={14} /></button>
-          </div>
-        </aside>
-      </section>
+        </Card>
+
     </div>
   );
 }
 
-export function SwapPage({ onInject }: { onInject: () => void }) {
+/** `/pool/:id` — open the pool on its non-NEAR token's page. */
+export function PoolRedirect() {
+  const { poolId: raw = "" } = useParams();
+  const id = /^\d{1,9}$/.test(raw) ? Number(raw) : null;
+  const pool = usePool(id);
+  if (id === null) return <Navigate to="/" replace />;
+  if (pool.data) {
+    if (pool.data.tokenIds.length !== 2) return <Notice title={`Pool #${id} has ${pool.data.tokenIds.length} tokens — only pairs are supported`} />;
+    const lead = pool.data.tokenIds.find((t) => t !== WRAP_NEAR_CONTRACT_ID) ?? pool.data.tokenIds[0];
+    return <Navigate to={`/t/${lead}?pool=${id}`} replace />;
+  }
+  if (pool.isError) return <Notice title={`Pool #${id} not found`}><TokenSearch size="md" /></Notice>;
+  return <Notice title={`Opening pool #${id}…`} />;
+}
+
+/* ================================================================ tracked */
+
+export function TrackPage() {
   return (
-    <div>
-      <PageHeader
-        eyebrow="ref instant swap · near mainnet"
-        title={<>Source the pair,<br /><span className="text-coin">then fill the pool.</span></>}
-        body={<>Single-hop swaps through the deepest Ref simple pool for the pair. Quotes use Ref's exact fee formula on live reserves, your wallet signs, and the output is sent straight back to you.</>}
-      />
-
-      <section className="mt-10 grid grid-cols-1 items-start gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-        <aside className="order-2 space-y-3 lg:order-1">
-          <div className="rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft)">
-            <div className="flex items-center gap-3">
-              <TokenAvatar size={38} />
-              <div><div className="text-sm font-semibold text-ink">NEAR in, anything out</div><div className="font-mono text-[10px] text-faint">wrap + swap in one approval</div></div>
+    <div className="mx-auto max-w-3xl space-y-4">
+      <h1 className="font-display text-3xl font-semibold text-ink">Tracked</h1>
+      <TokenSearch size="md" />
+      <Card className="p-4 sm:p-5">
+        <TrackedList
+          detailed
+          empty={
+            <div className="py-8 text-center">
+              <p className="text-sm text-faint">Nothing tracked yet</p>
+              <div className="mt-4 flex justify-center"><QuickTokens /></div>
             </div>
-            <div className="mt-5 grid gap-2 text-xs text-muted">
-              <div className="flex items-center gap-2"><IconZap size={14} className="text-coin" /> min_amount_out enforced on-chain</div>
-              <div className="flex items-center gap-2"><IconShield size={14} className="text-accent" /> output registration handled for you</div>
-              <div className="flex items-center gap-2"><IconSwap size={14} className="text-muted" /> routed through v2.ref-finance.near</div>
-            </div>
-          </div>
-          <button onClick={onInject} className="group block w-full rounded-3xl border border-line bg-card2/60 p-5 text-left transition-colors hover:border-accent/40">
-            <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">what happens next</div>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Take both legs to the injector and add them to the pool in one batch.</p>
-            <span className="mt-4 flex items-center gap-2 text-xs font-semibold text-accent"><IconDropletPlus size={14} /> open the injector <IconArrowRight size={14} className="transition-transform group-hover:translate-x-1" /></span>
-          </button>
-        </aside>
-        <div className="order-1 lg:order-2"><SwapCard onInject={onInject} /></div>
-      </section>
+          }
+        />
+      </Card>
     </div>
   );
 }
 
-type InfoKind = "how-it-works" | "docs" | "terms" | "privacy";
+/* ================================================================ swap */
 
-const infoContent: Record<InfoKind, { eyebrow: string; title: ReactNode; intro: string; sections: Array<{ heading: string; body: ReactNode }> }> = {
-  "how-it-works": {
-    eyebrow: "how it works",
-    title: <>A clear path from<br /><span className="text-accent">wallet to pool.</span></>,
-    intro: "nearpool is a non-custodial interface for adding liquidity to Ref Finance pools on NEAR mainnet. It prepares the exact calls; your wallet signs them.",
-    sections: [
-      { heading: "1. Connect a NEAR wallet", body: <>Use Meteor, HERE, Nightly or Sender through the NEAR Wallet Selector. nearpool reads balances over public RPC and never receives your keys.</> },
-      { heading: "2. Choose a pool", body: <>Open <Link className="font-semibold text-accent" to="/inject">Inject LP</Link> and pick a common pair (resolved on-chain to the deepest Ref simple pool) or type any pool id. Enter one side; the other is computed from live reserves as ΔB = ΔA × ReserveB / ReserveA.</> },
-      { heading: "3. Approve one batch", body: <>nearpool checks storage registrations, wraps NEAR if needed, deposits both legs into Ref with ft_transfer_call and calls add_liquidity — ordered transactions behind a single wallet approval. Progress is read back from the chain as each step lands.</> },
-      { heading: "4. Hold your LP shares", body: <>Shares are minted to your account inside Ref Finance. Manage or withdraw them any time from Ref's own interface. Need the counter asset first? Use the <Link className="font-semibold text-accent" to="/swap">swap page</Link>.</> },
-    ],
-  },
+export function SwapPage() {
+  const [params] = useSearchParams();
+  const out = params.get("out");
+  return (
+    <div className="mx-auto max-w-[460px]">
+      <SwapCard initialOut={out && isValidAccountId(out.toLowerCase()) ? out.toLowerCase() : undefined} />
+    </div>
+  );
+}
+
+/* ================================================================ docs / legal */
+
+type InfoKind = "docs" | "terms" | "privacy";
+
+const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode]> }> = {
   docs: {
-    eyebrow: "docs · protocol reference",
-    title: <>The pool, in<br /><span className="text-accent">plain language.</span></>,
-    intro: "Exact contract calls, storage rules and math used by nearpool.",
+    title: "Docs",
     sections: [
-      { heading: "Contracts", body: <ul className="list-disc space-y-2 pl-5"><li>Ref Finance exchange: <span className="font-mono">v2.ref-finance.near</span></li><li>Wrapped NEAR: <span className="font-mono">wrap.near</span></li><li>Explorer: nearblocks.io · RPC: rpc.mainnet.near.org with public fallbacks</li></ul> },
-      { heading: "Storage (NEP-145)", body: <>Before depositing, nearpool registers you on wrap.near when wrapping for the first time, registers Ref on a token contract that doesn't know it yet (<span className="font-mono">registration_only: true</span>, the token's own minimum), and registers or tops up your Ref account storage. Non-whitelisted tokens are added to your Ref account with <span className="font-mono">register_tokens</span>. Unused storage collateral is refunded or stays withdrawable.</> },
-      { heading: "Batch layout", body: <>Calls to the same contract share a transaction: Ref storage → token A (storage, near_deposit, ft_transfer_call at 50 TGas) → token B → add_liquidity at 100 TGas. Every token call attaches 1 yoctoNEAR as NEAR's full-access confirmation. First-time LPs attach 0.01 NEAR to add_liquidity for the new share record; Ref refunds whatever isn't used.</> },
-      { heading: "Math", body: <>All amounts are integers in the token's smallest unit (1 NEAR = 10^24 yoctoNEAR). Share previews mirror Ref's own formula — shares = min(amountᵢ × totalShares / reserveᵢ) — and min_amounts reduce the expected used amounts by your slippage tolerance. Leftover rounding dust stays in your Ref deposit.</> },
-      { heading: "Safety checklist", body: <ul className="list-disc space-y-2 pl-5"><li>Review every transaction in your wallet before approving.</li><li>Seeding an empty pool sets its price — check the ratio twice.</li><li>Never share a seed phrase or private key.</li><li>Verify confirmed transactions on nearblocks.io.</li></ul> },
+      ["How it works", <ol key="h" className="list-decimal space-y-1 pl-5"><li>Paste a token address.</li><li>Pick its Ref pool and enter an amount — the other side is sized from reserves.</li><li>Approve once. Storage, wrapping, deposits and <code>add_liquidity</code> run in order.</li></ol>],
+      ["Contracts", <ul key="c" className="space-y-1"><li><code>{REF_FINANCE_CONTRACT_ID}</code> — Ref Finance</li><li><code>{WRAP_NEAR_CONTRACT_ID}</code> — wrapped NEAR</li></ul>],
+      ["Fees & deposits", <ul key="f" className="list-disc space-y-1 pl-5"><li>No nearpool fee.</li><li>Storage deposits (≈0.00125–0.1 NEAR) are refundable or stay withdrawable.</li><li>First position in a pool attaches 0.01 NEAR; unused part is refunded.</li></ul>],
+      ["Tracking", <p key="t">Tracked tokens are saved in this browser only. Change is measured from the price when you started tracking.</p>],
+      ["Your LP", <p key="l">Shares stay in your Ref account. Withdraw any time on <a className="text-accent hover:underline" href="https://app.ref.finance" target="_blank" rel="noreferrer">app.ref.finance</a>.</p>],
     ],
   },
   terms: {
-    eyebrow: "terms of use",
-    title: <>Use the pool<br /><span className="text-accent">with intention.</span></>,
-    intro: "These terms describe the basic rules for using the nearpool interface. They are product terms, not financial, legal, tax, or investment advice.",
+    title: "Terms",
     sections: [
-      { heading: "The interface", body: <>nearpool provides software that helps users interact with Ref Finance and NEP-141 token contracts on NEAR. You are responsible for the wallet, assets, storage deposits, gas and transactions you initiate.</> },
-      { heading: "No custody or guarantee", body: <>nearpool does not custody your assets and cannot reverse, cancel, or guarantee blockchain transactions. Quotes, balances, and availability may change without notice.</> },
-      { heading: "Liquidity risk", body: <>Providing liquidity exposes you to price movement between the pooled assets (impermanent loss), smart-contract risk in Ref Finance and the token contracts, and the risks of any token you choose to pool.</> },
-      { heading: "Third-party networks", body: <>NEAR, Ref Finance, wallets, RPC providers and explorers are third-party systems. Delays, outages, fee changes, and contract risks may affect your experience.</> },
-      { heading: "Changes", body: <>We may update these terms and the interface as the product evolves. Continued use after an update means you accept the revised version. If you do not agree, stop using the interface.</> },
+      ["Software only", <p key="s">nearpool is an interface to Ref Finance and token contracts on NEAR. It never holds your funds and can't reverse transactions.</p>],
+      ["Your responsibility", <p key="r">You choose the tokens, amounts and transactions you sign. Liquidity carries impermanent-loss and smart-contract risk. Not financial advice.</p>],
+      ["Availability", <p key="a">Prices, balances and third-party services (RPC, wallets, explorers) can change or fail without notice.</p>],
     ],
   },
   privacy: {
-    eyebrow: "privacy policy",
-    title: <>Minimal data.<br /><span className="text-accent">Maximum clarity.</span></>,
-    intro: "nearpool is designed around wallet-based interaction. This policy explains the categories of information the interface may process and why.",
+    title: "Privacy",
     sections: [
-      { heading: "Wallet and transaction data", body: <>When you connect, your public NEAR account ID, balances, storage registrations and Ref deposits are read from public RPC. Confirmed injections may be listed on the public activity feed by transaction hash and account ID. nearpool never requests or stores private keys or seed phrases.</> },
-      { heading: "Local preferences", body: <>Theme choice and the wallet selector's session (which wallet you last used) are stored locally in your browser. Clearing site data removes them.</> },
-      { heading: "Service providers", body: <>Wallet providers, RPC endpoints, explorers and hosting providers may process technical request data according to their own policies. Review their terms before connecting.</> },
-      { heading: "Data choices", body: <>You can disconnect your wallet, clear local site data, and stop using the interface at any time. Because blockchain records are public and distributed, confirmed on-chain data cannot be deleted by nearpool.</> },
-      { heading: "Contact and updates", body: <>For privacy questions, use the project contact channel listed in the repository or deployment environment. We may update this policy when the product or integrations change.</> },
+      ["What's read", <p key="w">Your public account ID and balances, from public NEAR RPC. No keys, no seed phrases.</p>],
+      ["What's stored", <p key="s">Theme, wallet session and tracked tokens — in your browser. Confirmed injections appear in the public activity feed by account ID and transaction hash.</p>],
     ],
   },
 };
 
 export function InfoPage({ kind }: { kind: InfoKind }) {
-  const content = infoContent[kind];
-  const outline = content.sections.map((section) => section.heading);
+  const page = INFO[kind];
   return (
-    <div>
-      <PageHeader eyebrow={content.eyebrow} title={content.title} body={content.intro} />
-      <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[180px_1fr]">
-        <aside className="hidden lg:block">
-          <div className="sticky top-32 rounded-3xl border border-line bg-card/70 p-4">
-            <div className="font-mono text-[10px] tracking-[0.16em] text-faint uppercase">on this page</div>
-            <nav className="mt-4 space-y-2">
-              {outline.map((heading) => <a key={heading} href={`#${heading.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="block text-[11px] leading-snug text-muted transition-colors hover:text-ink">{heading}</a>)}
-            </nav>
-          </div>
-        </aside>
-        <article className="space-y-3">
-          {content.sections.map((section, index) => {
-            const id = section.heading.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-            return (
-              <section key={section.heading} id={id} className="scroll-mt-32 rounded-3xl border border-line bg-card/80 p-5 shadow-(--shadow-soft) sm:p-7">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accentsoft font-mono text-[10px] font-semibold text-accentstrong">{String(index + 1).padStart(2, "0")}</span>
-                  <div className="min-w-0"><h2 className="font-display text-lg font-semibold tracking-tight text-ink">{section.heading}</h2><div className="mt-3 text-sm leading-7 text-muted">{section.body}</div></div>
-                </div>
-              </section>
-            );
-          })}
-        </article>
-      </div>
+    <div className="mx-auto max-w-2xl">
+      <h1 className="font-display text-3xl font-semibold text-ink">{page.title}</h1>
+      <Card className="mt-5 divide-y divide-linesoft">
+        {page.sections.map(([heading, body]) => (
+          <section key={heading} className="p-4 sm:p-5">
+            <h2 className="font-semibold text-ink">{heading}</h2>
+            <div className="mt-1.5 text-sm leading-relaxed text-muted [&_code]:font-mono [&_code]:text-ink">{body}</div>
+          </section>
+        ))}
+      </Card>
     </div>
   );
 }

@@ -208,11 +208,7 @@ async function loadAllSimplePools(): Promise<RefPool[]> {
   return results;
 }
 
-/**
- * Every Ref SIMPLE_POOL containing both tokens, deepest first (by reserve of
- * `tokenA`). Scans `get_pools` on-chain; the index is cached for 5 minutes.
- */
-export async function findPoolsForPair(tokenA: string, tokenB: string): Promise<RefPool[]> {
+function simplePoolIndex(): Promise<RefPool[]> {
   if (!poolIndex || Date.now() - poolIndex.at > POOL_INDEX_TTL_MS) {
     const pools = loadAllSimplePools();
     pools.catch(() => {
@@ -220,15 +216,49 @@ export async function findPoolsForPair(tokenA: string, tokenB: string): Promise<
     });
     poolIndex = { at: Date.now(), pools };
   }
-  const pools = await poolIndex.pools;
+  return poolIndex.pools;
+}
+
+const byReserveOf = (tokenId: string) => (a: RefPool, b: RefPool) => {
+  const ra = a.reserves[a.tokenIds.indexOf(tokenId)];
+  const rb = b.reserves[b.tokenIds.indexOf(tokenId)];
+  return rb > ra ? 1 : rb < ra ? -1 : 0;
+};
+
+/**
+ * Every Ref SIMPLE_POOL containing both tokens, deepest first (by reserve of
+ * `tokenA`). Scans `get_pools` on-chain; the index is cached for 5 minutes.
+ */
+export async function findPoolsForPair(tokenA: string, tokenB: string): Promise<RefPool[]> {
+  const pools = await simplePoolIndex();
   return pools
     .filter((pool) => pool.tokenIds.length === 2 && pool.tokenIds.includes(tokenA) && pool.tokenIds.includes(tokenB))
+    .sort(byReserveOf(tokenA));
+}
+
+/**
+ * Every two-token Ref SIMPLE_POOL holding `tokenId`: pools paired with NEAR
+ * first, then deepest first by the token's own reserve. Empty pools last.
+ */
+export async function findPoolsForToken(tokenId: string): Promise<RefPool[]> {
+  const pools = await simplePoolIndex();
+  const deepest = byReserveOf(tokenId);
+  return pools
+    .filter((pool) => pool.tokenIds.length === 2 && pool.tokenIds.includes(tokenId) && pool.tokenIds[0] !== pool.tokenIds[1])
     .sort((a, b) => {
-      const ra = a.reserves[a.tokenIds.indexOf(tokenA)];
-      const rb = b.reserves[b.tokenIds.indexOf(tokenA)];
-      return rb > ra ? 1 : rb < ra ? -1 : 0;
+      const emptyA = a.sharesTotalSupply === 0n;
+      const emptyB = b.sharesTotalSupply === 0n;
+      if (emptyA !== emptyB) return emptyA ? 1 : -1;
+      const nearA = a.tokenIds.includes(WRAP_NEAR_CONTRACT_ID);
+      const nearB = b.tokenIds.includes(WRAP_NEAR_CONTRACT_ID);
+      if (nearA !== nearB) return nearA ? -1 : 1;
+      return deepest(a, b);
     });
 }
+
+/** The other token in a two-token pool. */
+export const counterToken = (pool: RefPool, tokenId: string): string =>
+  pool.tokenIds[0] === tokenId ? pool.tokenIds[1] : pool.tokenIds[0];
 
 /* ================================================================ account snapshot */
 

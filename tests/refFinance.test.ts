@@ -12,6 +12,7 @@ import {
   type AccountSnapshot, type RefPool, type TokenAccountState, type PlannedCall,
 } from "../src/lib/refFinance";
 import { findOutcomeFailure, outcomeReturnValue, isValidAccountId } from "../src/lib/near";
+import { parseTokenInput } from "../src/lib/tokenInput";
 
 const NEAR = 10n ** 24n;
 const USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
@@ -196,5 +197,18 @@ test("outcome parsing: receipt failure detected, return value decoded", () => {
   assert.match(findOutcomeFailure(refunded as never)!, /E10/);
   assert.match(explainNearError(new Error("Smart contract panicked: E68: slippage error")).message, /slippage/);
   assert.ok(explainNearError(new Error("User rejected the request")).rejected);
+});
+test("paste parser: addresses, pool ids and links", () => {
+  assert.deepEqual(parseTokenInput("  Token.V2.Ref-Finance.near "), { kind: "token", tokenId: "token.v2.ref-finance.near" });
+  assert.deepEqual(parseTokenInput(USDC), { kind: "token", tokenId: USDC });
+  assert.deepEqual(parseTokenInput("#79"), { kind: "pool", poolId: 79 });
+  assert.deepEqual(parseTokenInput("79"), { kind: "pool", poolId: 79 });
+  assert.deepEqual(parseTokenInput("https://nearblocks.io/token/usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
+  assert.deepEqual(parseTokenInput("https://nearblocks.io/address/blackdragon.tkn.near?tab=tokens"), { kind: "token", tokenId: "blackdragon.tkn.near" });
+  assert.deepEqual(parseTokenInput("https://app.ref.finance/pool/1910"), { kind: "pool", poolId: 1910 });
+  assert.deepEqual(parseTokenInput("https://app.ref.finance/#near|usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
+  assert.deepEqual(parseTokenInput("https://app.ref.finance/?tokenIn=near&tokenOut=usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
+  assert.deepEqual(parseTokenInput("not a token!"), { kind: "invalid" });
+  assert.deepEqual(parseTokenInput(""), { kind: "empty" });
 });
 console.log(`\n${passed} passed`);
