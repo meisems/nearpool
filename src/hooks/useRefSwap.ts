@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNearWallet } from "../context/NearWalletContext";
 import { NearTransactionError, outcomeTxHash } from "../lib/near";
-import { explainNearError, getPool, loadAccountSnapshot, planSwap, type RefPool, type SwapPlan } from "../lib/refFinance";
+import { explainNearError, getPlatformFee, getPool, loadAccountSnapshot, planSwap, type RefPool, type SwapPlan } from "../lib/refFinance";
 import { executePlannedTransactions } from "./useNearInjection";
 import { REF_QUERY_ROOT } from "./useRefData";
 
@@ -42,15 +42,17 @@ export function useRefSwap() {
       setReceipt(null);
       setPhase("checking-storage");
       try {
-        const [pool, snapshot] = await Promise.all([
+        const [pool, snapshot, fee] = await Promise.all([
           getPool(request.pool.id),
           loadAccountSnapshot(accountId, [request.tokenIn, request.tokenOut]),
+          getPlatformFee(),
         ]);
-        const nextPlan = planSwap(snapshot, { ...request, pool });
+        const nextPlan = planSwap(snapshot, { ...request, pool, fee });
         setPlan(nextPlan);
         setPhase("signing");
         const outcomes = await executePlannedTransactions(signAndSendTransactions, accountId, nextPlan.transactions);
-        const last = outcomes[outcomes.length - 1];
+        // The swap is the ft_transfer_call on tokenIn (the fee transfer, if any, comes after it).
+        const last = [...outcomes].reverse().find((o) => (o.transaction as { receiver_id?: string } | undefined)?.receiver_id === request.tokenIn);
         const result: SwapReceipt = {
           txHash: last ? outcomeTxHash(last) : null,
           expectedOut: nextPlan.expectedOut,

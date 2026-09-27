@@ -4,12 +4,14 @@ import { getNativeBalance } from "../lib/near";
 import {
   findPoolsForPair,
   findPoolsForToken,
+  getPlatformFee,
   getFtMetadata,
   getPool,
   getPoolShares,
   loadAccountSnapshot,
   type AccountSnapshot,
   type FtMetadata,
+  type PlatformFee,
   type RefPool,
 } from "../lib/refFinance";
 
@@ -88,5 +90,15 @@ export function useNativeBalance() {
     queryFn: () => getNativeBalance(accountId as string),
     enabled: !!accountId,
     refetchInterval: 12_000,
+  });
+}
+
+/** Interface fee that will be added to each injection / swap (null when off). */
+export function usePlatformFee() {
+  return useQuery<PlatformFee | null>({
+    queryKey: [REF_QUERY_ROOT, "platform-fee"],
+    queryFn: getPlatformFee,
+    staleTime: Infinity,
+    retry: 1,
   });
 }

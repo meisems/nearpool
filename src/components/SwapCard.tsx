@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useAccountSnapshot, useFtMetadata, usePairPools } from "../hooks/useRefData";
+import { useAccountSnapshot, useFtMetadata, usePairPools, usePlatformFee } from "../hooks/useRefData";
 import { useRefSwap } from "../hooks/useRefSwap";
 import {
   explorerTxUrl,
@@ -65,6 +65,8 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
   const pool = pools.data?.[0] ?? null;
   const snapshot = useAccountSnapshot([tokenIn, tokenOut]);
   const swap = useRefSwap();
+  const feeQ = usePlatformFee();
+  const fee = feeQ.data ?? null;
 
   const amountIn = useMemo(() => (metaIn.data ? parseUnits(amountInput, decIn) ?? 0n : 0n), [amountInput, decIn, metaIn.data]);
   const inIdx = pool ? pool.tokenIds.indexOf(tokenIn) : -1;
@@ -78,18 +80,18 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
   const inState = snapshot.data?.tokens[tokenIn];
   const native = snapshot.data?.native.available ?? 0n;
   const spendable = inState
-    ? inState.walletBalance + (tokenIn === WRAP_NEAR_CONTRACT_ID ? maxBig(native - NEAR_GAS_RESERVE - STORAGE_HEADROOM, 0n) : 0n)
+    ? inState.walletBalance + (tokenIn === WRAP_NEAR_CONTRACT_ID ? maxBig(native - NEAR_GAS_RESERVE - STORAGE_HEADROOM - (fee?.amount ?? 0n), 0n) : 0n)
     : 0n;
 
   const planError = useMemo(() => {
     if (!snapshot.data || !pool || amountIn <= 0n) return null;
     try {
-      planSwap(snapshot.data, { pool, tokenIn, tokenOut, amountIn, slippageBps: slipBps, payWithNative: true });
+      planSwap(snapshot.data, { pool, tokenIn, tokenOut, amountIn, slippageBps: slipBps, payWithNative: true, fee });
       return null;
     } catch (e) {
       return e instanceof PlanError ? e.message : e instanceof Error ? e.message : String(e);
     }
-  }, [snapshot.data, pool, tokenIn, tokenOut, amountIn, slipBps]);
+  }, [snapshot.data, pool, tokenIn, tokenOut, amountIn, slipBps, fee]);
 
   useEffect(() => {
     if (swap.phase === "success") setAmountInput("");
@@ -103,7 +105,7 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
       ? "No pool for this pair"
       : amountIn <= 0n
         ? "Enter an amount"
-        : !snapshot.data
+        : !snapshot.data || feeQ.isLoading
           ? "Checking balances…"
           : amountIn > spendable
             ? `Not enough ${symIn}`
@@ -207,6 +209,7 @@ export function SwapCard({ initialOut }: { initialOut?: string }) {
             </>
           )}
           <div className="flex justify-between"><dt className="text-muted">Pool</dt><dd className="text-ink tabular">#{pool.id} · {(pool.totalFeeBps / 100).toFixed(2)}%</dd></div>
+          {fee && <div className="flex justify-between"><dt className="text-muted">Fee</dt><dd className="text-ink tabular">{fmtAmount(fee.amount, NEAR_DECIMALS)} NEAR</dd></div>}
         </dl>
       )}
 

@@ -8,6 +8,7 @@ import {
   explainNearError,
   getDeposits,
   getFtBalance,
+  getPlatformFee,
   getPool,
   getPoolShares,
   loadAccountSnapshot,
@@ -134,10 +135,11 @@ export function useNearInjection() {
 
       try {
         /* Step A (pre-flight): fresh pool, storage registrations, balances. */
-        const [pool, snapshot, existingShares] = await Promise.all([
+        const [pool, snapshot, existingShares, fee] = await Promise.all([
           getPool(request.pool.id),
           loadAccountSnapshot(accountId, request.pool.tokenIds),
           getPoolShares(request.pool.id, accountId),
+          getPlatformFee(),
         ]);
         const nextPlan = planInjection(snapshot, {
           pool,
@@ -146,6 +148,7 @@ export function useNearInjection() {
           useRefDeposits: request.useRefDeposits,
           payWithNative: request.payWithNative,
           existingShares,
+          fee,
         });
         setPlan(nextPlan);
 

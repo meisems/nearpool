@@ -211,4 +211,30 @@ test("paste parser: addresses, pool ids and links", () => {
   assert.deepEqual(parseTokenInput("not a token!"), { kind: "invalid" });
   assert.deepEqual(parseTokenInput(""), { kind: "empty" });
 });
+test("platform fee: last, its own transaction, a plain transfer, counted in the NEAR budget", () => {
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
+  const snap = snapshot({}, { "wrap.near": token("wrap.near", 24, { walletBalance: 50n * NEAR, registeredOnRefAccount: true }), [USDC]: token(USDC, 6, { walletBalance: 100_000_000n, registeredOnRefAccount: true }) });
+  const plan = planInjection(snap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee });
+  assert.deepEqual(methods(plan.calls), ["W:ft_transfer_call", "U:ft_transfer_call", "R:add_liquidity", "U:transfer"]);
+  const last = plan.calls.at(-1)!;
+  assert.equal(last.action, "transfer");
+  assert.equal(last.receiverId, "nearpoolpf.near");
+  assert.equal(last.deposit, NEAR / 10n);
+  assert.equal(plan.fee, NEAR / 10n);
+  assert.deepEqual(plan.transactions.map((t) => t.receiverId), ["wrap.near", USDC, REF, "nearpoolpf.near"]);
+  const txs = toWalletTransactions("alice.near", plan.transactions);
+  const action = txs.at(-1)!.actions[0] as { transfer?: { deposit: bigint }; functionCall?: unknown };
+  assert.equal(action.transfer?.deposit, NEAR / 10n);
+  assert.equal(action.functionCall, undefined);
+  // Without the fee the same wallet is fine; the fee pushes it over the NEAR budget.
+  const tight = { total: NEAR / 20n + NEAR / 10n, storageReserved: 0n, available: NEAR / 20n + 1n + 10n ** 22n };
+  const tightSnap = snapshot({ native: tight }, snap.tokens);
+  planInjection(tightSnap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n });
+  assert.throws(() => planInjection(tightSnap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-near");
+  // No fee → no transfer.
+  assert.equal(planInjection(snap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee: null }).fee, 0n);
+  const swap = planSwap(snapshot(), { pool, tokenIn: "wrap.near", tokenOut: USDC, amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true, fee });
+  assert.equal(swap.calls.at(-1)!.receiverId, "nearpoolpf.near");
+  assert.equal(swap.calls.at(-2)!.methodName, "ft_transfer_call");
+});
 console.log(`\n${passed} passed`);

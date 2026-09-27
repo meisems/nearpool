@@ -11,6 +11,9 @@
 import { actionCreators, type Transaction } from "@near-wallet-selector/core";
 import {
   COMMON_TOKENS,
+  FEE_AMOUNT,
+  FEE_ENABLED,
+  FEE_RECEIVER_ID,
   FT_STORAGE_DEPOSIT_FALLBACK,
   GAS,
   LP_STORAGE_DEPOSIT,
@@ -24,7 +27,7 @@ import {
   REF_STORAGE_TOP_UP,
   WRAP_NEAR_CONTRACT_ID,
 } from "../config/near";
-import { getNativeBalance, viewMethod, type NativeBalance } from "./near";
+import { getNativeBalance, rpcProvider, viewMethod, type NativeBalance } from "./near";
 import { fmtAmount } from "./format";
 import {
   applySlippage,
@@ -327,10 +330,12 @@ export async function loadAccountSnapshot(accountId: string, tokenIds: string[])
 
 /* ================================================================ planning */
 
-export type PlanStep = "storage" | "wrap" | "deposit" | "inject" | "swap";
+export type PlanStep = "storage" | "wrap" | "deposit" | "inject" | "swap" | "fee";
 
 export interface PlannedCall {
   step: PlanStep;
+  /** Omitted for function calls; "transfer" sends `deposit` as a plain NEAR transfer. */
+  action?: "transfer";
   receiverId: string;
   methodName: string;
   args: Record<string, unknown>;
@@ -380,7 +385,11 @@ export function toWalletTransactions(signerId: string, txs: PlannedTransaction[]
   return txs.map((tx) => ({
     signerId,
     receiverId: tx.receiverId,
-    actions: tx.calls.map((call) => actionCreators.functionCall(call.methodName, call.args, call.gas, call.deposit)),
+    actions: tx.calls.map((call) =>
+      call.action === "transfer"
+        ? actionCreators.transfer(call.deposit)
+        : actionCreators.functionCall(call.methodName, call.args, call.gas, call.deposit),
+    ),
   }));
 }
 
@@ -468,6 +477,54 @@ function assertNativeBudget(snapshot: AccountSnapshot, calls: PlannedCall[]) {
   }
 }
 
+/* ---------------------------------------------------------------- platform fee */
+
+export interface PlatformFee {
+  receiverId: string;
+  amount: bigint;
+}
+
+let feeCheck: Promise<PlatformFee | null> | null = null;
+
+/**
+ * The configured interface fee, or null when disabled — or when the
+ * receiver account doesn't exist on-chain, since a transfer to a missing
+ * named account would make every batch fail. Checked once per page load.
+ */
+export function getPlatformFee(): Promise<PlatformFee | null> {
+  if (!FEE_ENABLED) return Promise.resolve(null);
+  if (!feeCheck) {
+    feeCheck = rpcProvider
+      .viewAccount(FEE_RECEIVER_ID)
+      .then(() => ({ receiverId: FEE_RECEIVER_ID, amount: FEE_AMOUNT }))
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/does not exist|UNKNOWN_ACCOUNT|doesn't exist/i.test(message)) {
+          console.error(`fee receiver ${FEE_RECEIVER_ID} does not exist on-chain; fee disabled`);
+          return null;
+        }
+        // Transient RPC failure: don't cache, keep charging the configured fee.
+        feeCheck = null;
+        return { receiverId: FEE_RECEIVER_ID, amount: FEE_AMOUNT };
+      });
+  }
+  return feeCheck;
+}
+
+/** Fee transfer, always placed last so a batch that fails earlier normally isn't charged. */
+function feeCall(fee: PlatformFee): PlannedCall {
+  return {
+    step: "fee",
+    action: "transfer",
+    receiverId: fee.receiverId,
+    methodName: "transfer",
+    args: {},
+    gas: 0n,
+    deposit: fee.amount,
+    label: `nearpool fee · ${fmtNear(fee.amount)} → ${fee.receiverId}`,
+  };
+}
+
 /* ---------------------------------------------------------------- injection */
 
 export interface InjectionIntent {
@@ -481,6 +538,8 @@ export interface InjectionIntent {
   payWithNative: boolean;
   /** Current LP shares the user holds in the pool. */
   existingShares: bigint;
+  /** Interface fee appended as the final transfer, if any. */
+  fee?: PlatformFee | null;
 }
 
 export interface InjectionPlan {
@@ -494,11 +553,13 @@ export interface InjectionPlan {
   /** Per token (pool order): taken from pre-existing Ref deposits. */
   refDepositsUsed: bigint[];
   wrapAmount: bigint;
+  /** Interface fee included in this batch (0 when none). */
+  fee: bigint;
   steps: PlanStep[];
 }
 
 export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent): InjectionPlan {
-  const { pool, amounts, slippageBps, useRefDeposits, payWithNative, existingShares } = intent;
+  const { pool, amounts, slippageBps, useRefDeposits, payWithNative, existingShares, fee } = intent;
   const accountId = snapshot.accountId;
   if (pool.kind !== SIMPLE_POOL) {
     throw new PlanError("unsupported-pool", `pool #${pool.id} is a ${pool.kind.toLowerCase().replace(/_/g, " ")}; only simple pools are supported`);
@@ -588,7 +649,7 @@ export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent
     label: `add liquidity to pool #${pool.id}${existingShares > 0n ? "" : ` · ${fmtNear(lpDeposit)} LP storage, unused part refunded`}`,
   };
 
-  const calls = [...refCalls, ...tokenCalls, injectCall];
+  const calls = [...refCalls, ...tokenCalls, injectCall, ...(fee ? [feeCall(fee)] : [])];
   assertNativeBudget(snapshot, calls);
 
   return {
@@ -600,6 +661,7 @@ export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent
     walletDeposits: splits.map((s) => s.toDeposit),
     refDepositsUsed: splits.map((s) => s.fromRef),
     wrapAmount,
+    fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
   };
 }
@@ -613,6 +675,7 @@ export interface SwapIntent {
   amountIn: bigint;
   slippageBps: number;
   payWithNative: boolean;
+  fee?: PlatformFee | null;
 }
 
 export interface SwapPlan {
@@ -621,12 +684,13 @@ export interface SwapPlan {
   expectedOut: bigint;
   minAmountOut: bigint;
   wrapAmount: bigint;
+  fee: bigint;
   steps: PlanStep[];
 }
 
 /** Single-hop Ref "instant swap": the output is sent straight back to the wallet. */
 export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPlan {
-  const { pool, tokenIn, tokenOut, amountIn, slippageBps, payWithNative } = intent;
+  const { pool, tokenIn, tokenOut, amountIn, slippageBps, payWithNative, fee } = intent;
   const accountId = snapshot.accountId;
   if (pool.kind !== SIMPLE_POOL) throw new PlanError("unsupported-pool", `pool #${pool.id} is not a simple pool`);
   if (amountIn <= 0n) throw new PlanError("zero-amount", "enter an amount");
@@ -683,6 +747,7 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
     label: `swap on pool #${pool.id} · min ${fmtAmount(minAmountOut, outState.metadata.decimals)} ${displaySymbol(tokenOut, outState.metadata)}`,
   });
 
+  if (fee) calls.push(feeCall(fee));
   assertNativeBudget(snapshot, calls);
   return {
     calls,
@@ -690,6 +755,7 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
     expectedOut,
     minAmountOut,
     wrapAmount,
+    fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
   };
 }
