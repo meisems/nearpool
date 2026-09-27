@@ -118,7 +118,7 @@ export const STORAGE_PRICE_PER_BYTE = 10n ** 19n;
  * contract, so it can't be forced on someone calling Ref directly.
  * Set VITE_FEE_NEAR=0 to disable.
  */
-export const FEE_RECEIVER_ID: string = (env.VITE_FEE_RECEIVER || "ambereui.tg").trim().toLowerCase();
+export const FEE_RECEIVER_ID: string = (env.VITE_FEE_RECEIVER || "nearpoolpf.near").trim().toLowerCase();
 
 function parseNearAmount(value: string): bigint {
   const match = /^(\d+)(?:\.(\d{0,24}))?$/.exec(value.trim());

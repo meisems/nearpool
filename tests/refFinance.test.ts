@@ -212,16 +212,16 @@ test("paste parser: addresses, pool ids and links", () => {
   assert.deepEqual(parseTokenInput(""), { kind: "empty" });
 });
 test("platform fee: last, its own transaction, a plain transfer, counted in the NEAR budget", () => {
-  const fee = { receiverId: "ambereui.tg", amount: NEAR / 10n };
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
   const snap = snapshot({}, { "wrap.near": token("wrap.near", 24, { walletBalance: 50n * NEAR, registeredOnRefAccount: true }), [USDC]: token(USDC, 6, { walletBalance: 100_000_000n, registeredOnRefAccount: true }) });
   const plan = planInjection(snap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee });
   assert.deepEqual(methods(plan.calls), ["W:ft_transfer_call", "U:ft_transfer_call", "R:add_liquidity", "U:transfer"]);
   const last = plan.calls.at(-1)!;
   assert.equal(last.action, "transfer");
-  assert.equal(last.receiverId, "ambereui.tg");
+  assert.equal(last.receiverId, "nearpoolpf.near");
   assert.equal(last.deposit, NEAR / 10n);
   assert.equal(plan.fee, NEAR / 10n);
-  assert.deepEqual(plan.transactions.map((t) => t.receiverId), ["wrap.near", USDC, REF, "ambereui.tg"]);
+  assert.deepEqual(plan.transactions.map((t) => t.receiverId), ["wrap.near", USDC, REF, "nearpoolpf.near"]);
   const txs = toWalletTransactions("alice.near", plan.transactions);
   const action = txs.at(-1)!.actions[0] as { transfer?: { deposit: bigint }; functionCall?: unknown };
   assert.equal(action.transfer?.deposit, NEAR / 10n);
@@ -234,7 +234,7 @@ test("platform fee: last, its own transaction, a plain transfer, counted in the 
   // No fee → no transfer.
   assert.equal(planInjection(snap, { pool, amounts, slippageBps: 50, useRefDeposits: true, payWithNative: true, existingShares: 1n, fee: null }).fee, 0n);
   const swap = planSwap(snapshot(), { pool, tokenIn: "wrap.near", tokenOut: USDC, amountIn: 2n * NEAR, slippageBps: 50, payWithNative: true, fee });
-  assert.equal(swap.calls.at(-1)!.receiverId, "ambereui.tg");
+  assert.equal(swap.calls.at(-1)!.receiverId, "nearpoolpf.near");
   assert.equal(swap.calls.at(-2)!.methodName, "ft_transfer_call");
 });
 console.log(`\n${passed} passed`);

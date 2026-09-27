@@ -67,7 +67,7 @@ npm run build && npm start   # production server on :10000 (serves dist/ + /api/
 | `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
-| `VITE_FEE_RECEIVER` | `ambereui.tg` (interface fee recipient) |
+| `VITE_FEE_RECEIVER` | `nearpoolpf.near` (interface fee recipient) |
 | `VITE_FEE_NEAR` | `0.1` NEAR per injection or swap; `0` disables |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | unset → in-memory activity feed (server only) |
