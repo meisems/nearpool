@@ -33,7 +33,8 @@ A second page offers single-hop Ref instant swaps for sourcing the counter asset
 | `src/utils/zapMath.ts` | Proportional quoting, share estimation, slippage, swap output — mirrors Ref's integer math |
 | `src/hooks/useNearInjection.ts` | Pipeline state machine; observes progress on-chain and verifies every receipt |
 | `src/hooks/useRefSwap.ts` | Instant swap execution |
-| `server.mjs` | Static hosting + shared activity feed (each post re-verified against NEAR RPC) |
+| `server.mjs` | Node hosting + shared activity feed (each post re-verified against NEAR RPC) |
+| `worker/`, `functions/` | Same activity feed for Cloudflare Workers / Pages, stored in D1 (`migrations/`) |
 
 ## Development
 
@@ -44,6 +45,12 @@ npm test           # math + transaction-planner checks
 npm run typecheck
 npm run build && npm start   # production server on :10000 (serves dist/ + /api/activity)
 ```
+
+### Deploying
+
+- **Cloudflare Workers or Pages** — see [DEPLOY_CLOUDFLARE.md](DEPLOY_CLOUDFLARE.md)
+  (`npm run cf:deploy` / `npm run cf:pages:deploy`; activity feed on D1).
+- **Node hosts (Render etc.)** — `render.yaml` runs `server.mjs`; activity feed on Turso.
 
 ### Environment (all optional)
 
