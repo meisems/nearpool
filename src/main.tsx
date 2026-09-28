@@ -17,8 +17,6 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     // updateViaCache "none": the browser always re-checks sw.js itself, so a new
     // deploy's worker is picked up on the next visit.
-    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => {
-      console.error("service worker registration failed");
-    });
+    navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => {});
   });
 }

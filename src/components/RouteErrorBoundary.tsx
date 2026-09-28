@@ -16,10 +16,6 @@ export class RouteErrorBoundary extends Component<{ children: ReactNode }, State
     return { error };
   }
 
-  componentDidCatch() {
-    console.error("page crashed");
-  }
-
   render() {
     if (!this.state.error) return this.props.children;
     return (

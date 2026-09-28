@@ -86,7 +86,6 @@ function getSelector(): Promise<WalletSelector> {
       const modules: WalletModuleFactory[] = [];
       for (const result of loaded) {
         if (result.status === "fulfilled") modules.push(result.value);
-        else console.warn("wallet adapter could not load");
       }
       if (!modules.length) throw new Error("Wallets could not load. Please retry the connection.");
       return setupWalletSelector({
@@ -136,7 +135,6 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        console.error("wallet selector failed to initialize");
         setError(e instanceof Error ? e.message : String(e));
         setStatus("error");
       });
@@ -191,7 +189,6 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
       .wallet(selectedWalletId)
       .then((instance) => alive && setWallet(instance))
       .catch(() => {
-        console.error("could not load wallet");
         if (alive) setWallet(null);
       });
     return () => {
