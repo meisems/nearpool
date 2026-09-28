@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NearWalletProvider } from "./context/NearWalletContext";
@@ -9,6 +9,7 @@ import { Navbar } from "./components/Navbar";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { shouldShowSplash, SplashScreen } from "./components/SplashScreen";
 import { Logo } from "./components/Logo";
+import { newVersionAvailable, watchForNewVersion } from "./lib/appVersion";
 import { DocsPage, HomePage, InfoPage, PoolRedirect, SwapPage, TokenPage, TrackPage } from "./pages";
 
 const queryClient = new QueryClient({
@@ -57,6 +58,23 @@ function usePageTitle() {
   }, [pathname]);
 }
 
+/** Load a newly deployed version on the next page change (see lib/appVersion). */
+function PickUpNewVersion() {
+  const { pathname } = useLocation();
+  const first = useRef(true);
+  useEffect(() => {
+    watchForNewVersion();
+  }, []);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (newVersionAvailable()) window.location.reload();
+  }, [pathname]);
+  return null;
+}
+
 function ScrollToTop() {
   const { pathname } = useLocation();
   // Braces matter: newer Chrome returns a Promise from scrollTo, and React
@@ -76,6 +94,7 @@ function Shell() {
     <div className="flex min-h-dvh flex-col bg-canvas text-ink">
       {splash && <SplashScreen onDone={() => setSplash(false)} />}
       <ScrollToTop />
+      <PickUpNewVersion />
       <Navbar />
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-6 sm:pt-10">
         <RouteErrorBoundary key={pathname}>

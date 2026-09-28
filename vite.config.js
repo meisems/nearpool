@@ -28,8 +28,25 @@ function loadWranglerViteVars() {
 }
 loadWranglerViteVars();
 
+/**
+ * Build id, compiled into the app and written to dist/version.json. An open
+ * tab compares the two to notice that a newer version has been deployed.
+ */
+const BUILD_ID = process.env.WORKERS_CI_COMMIT_SHA || process.env.CF_PAGES_COMMIT_SHA || `${Date.now()}`;
+
+function versionFile() {
+  return {
+    name: "nearpool-version-file",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD_ID }) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
+  plugins: [react(), tailwindcss(), versionFile()],
   server: {
     host: "0.0.0.0",
     port: 3000,

@@ -26,3 +26,6 @@ declare module "*.png" {
   const src: string;
   export default src;
 }
+
+/** Build id (see vite.config.js); matches /version.json of the same deploy. */
+declare const __BUILD_ID__: string;
