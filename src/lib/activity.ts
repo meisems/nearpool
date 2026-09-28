@@ -67,5 +67,5 @@ export async function publishActivity(hash: string, accountId: string): Promise<
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1_000 * (attempt + 1)));
   }
-  console.warn("shared activity feed unavailable; transaction is still confirmed on-chain", hash);
+  console.warn("shared activity feed unavailable; transaction is still confirmed on-chain");
 }

@@ -692,7 +692,7 @@ export function getPlatformFee(): Promise<PlatformFee | null> {
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         if (/does not exist|UNKNOWN_ACCOUNT|doesn't exist/i.test(message)) {
-          console.error(`fee receiver ${FEE_RECEIVER_ID} does not exist on-chain; fee disabled`);
+          console.error("fee receiver does not exist on-chain; fee disabled");
           return null;
         }
         // Transient RPC failure: don't cache, keep charging the configured fee.

@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Component, type ReactNode } from "react";
 
 interface State {
   error: Error | null;
@@ -16,8 +16,8 @@ export class RouteErrorBoundary extends Component<{ children: ReactNode }, State
     return { error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("page crashed", error, info.componentStack);
+  componentDidCatch() {
+    console.error("page crashed");
   }
 
   render() {

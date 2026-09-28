@@ -277,8 +277,8 @@ async function handleActivityPublish(req, res) {
 async function handleActivityPosts(res) {
   try {
     return sendJson(res, 200, { posts: await listActivity(100) });
-  } catch (error) {
-    console.error("could not list activity posts", error);
+  } catch {
+    console.error("could not list activity posts");
     return sendJson(res, 200, { posts: [] });
   }
 }
@@ -415,5 +415,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`nearpool server listening on http://${host}:${port}`);
+  console.log("nearpool server listening");
 });

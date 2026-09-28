@@ -338,8 +338,8 @@ export async function handleActivityRequest(request: Request, env: Env): Promise
     if (!env.DB) return json(200, { posts: [] });
     try {
       return json(200, { posts: await listActivity(env.DB) });
-    } catch (error) {
-      console.error("could not list activity posts", error);
+    } catch {
+      console.error("could not list activity posts");
       return json(200, { posts: [] });
     }
   }
