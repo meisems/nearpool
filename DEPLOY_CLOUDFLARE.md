@@ -101,21 +101,23 @@ and certificate.
 
 ### Build time (browser bundle)
 
-These are inlined by Vite when `npm run build` runs, so set them wherever
-the build happens: your shell for local deploys, or the Worker's **Settings →
-Builds → Variables and secrets** for Workers Builds. Changing them requires
-a rebuild.
+These live in `wrangler.toml` under `[vars]` (the `VITE_*` entries).
+`vite.config.js` reads them when `npm run build` runs and compiles them into
+the site, so they are public: never put an API key in one. Edit the file and
+redeploy to change them. A variable with the same name set in your shell or
+in the Worker's **Settings → Builds → Variables and secrets** overrides the
+file.
 
 | Variable | Default |
 | --- | --- |
-| `VITE_NEAR_RPC_URL` | `https://rpc.mainnet.near.org` |
+| `VITE_NEAR_RPC_URL` | `/api/rpc` in `wrangler.toml` (the Worker's proxy); `https://rpc.mainnet.near.org` if unset |
 | `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` — receives the interface fee |
 | `VITE_FEE_NEAR` | `0.1` — fee per injection or swap; `0` disables it |
-| `VITE_WALLETCONNECT_PROJECT_ID` | unset — set it (free at cloud.reown.com) to add WalletConnect QR pairing |
+| `VITE_WALLETCONNECT_PROJECT_ID` | set in `wrangler.toml`; adds WalletConnect QR pairing. In the Reown dashboard (cloud.reown.com), add your site's domain to the project's allowlist |
 
 The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
 production, put a dedicated RPC (FastNEAR, Lava, Ankr, etc.) in
@@ -144,8 +146,9 @@ your provider:
 2. Store it as a secret: `npx wrangler secret put NEAR_RPC_URL` and paste
    the URL (or the Worker's **Settings → Variables and Secrets → Add**, type
    **Secret**).
-3. Set the build variable `VITE_NEAR_RPC_URL=/api/rpc` (Workers Builds
-   settings, or in your shell for `npm run cf:deploy`), then redeploy.
+3. `VITE_NEAR_RPC_URL = "/api/rpc"` is already set in `wrangler.toml`, so
+   the site sends its RPC calls to the proxy. Redeploy after adding the
+   secret. Without the secret, the proxy uses the public endpoints.
 
 Check it: `curl -X POST https://<your-host>/api/rpc -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"status","params":[]}'`
 should return chain status, and the key must not appear anywhere in the

@@ -65,6 +65,9 @@ npm run build && npm start   # production server on :10000 (serves dist/ + /api/
 
 ### Environment (all optional)
 
+For Cloudflare builds the `VITE_*` values are set in `wrangler.toml` `[vars]` (read by
+`vite.config.js`); shell variables override them.
+
 | Variable | Default |
 | --- | --- |
 | `VITE_NEAR_RPC_URL` | `https://rpc.mainnet.near.org`. Use `/api/rpc` with a keyed provider (see DEPLOY_CLOUDFLARE.md) |
