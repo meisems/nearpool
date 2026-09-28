@@ -9,7 +9,7 @@ import {
 } from "../src/utils/zapMath";
 import {
   groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError, bestRoute, quoteRoute, planCreatePool, quoteZap, planZapInjection,
-  planZapViaDcl, planDclSwap, type ZapQuote,
+  planZapViaDcl, planDclSwap, planLockShares, lpTokenId, type ZapQuote,
   type AccountSnapshot, type RefPool, type TokenAccountState, type PlannedCall,
 } from "../src/lib/refFinance";
 import { findOutcomeFailure, outcomeReturnValue, isValidAccountId } from "../src/lib/near";
@@ -402,5 +402,23 @@ test("Rhea DCL swap: wrap, register output, ft_transfer_call to DCL, fee last", 
   assert.equal(plan.minAmountOut, applySlippage(500n, 50));
   assert.equal(plan.calls[2].args.receiver_id, "dclv2.ref-labs.near");
   assert.throws(() => planDclSwap(snap, { tokenIn: NPAID, tokenOut: "wrap.near", poolId: "x", poolFee: 10000, amountIn: 10n ** 30n, expectedOut: 1n, slippageBps: 50, payWithNative: true }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-token");
+});
+test("LP lock: mft_register the unowned lock account once, then mft_transfer the shares", () => {
+  const LOCK = "0".repeat(64);
+  assert.ok(isValidAccountId(LOCK));
+  assert.equal(lpTokenId(8728), ":8728");
+  const native = { total: 5n * NEAR, storageReserved: 0n, available: 5n * NEAR };
+  const plan = planLockShares(native, { poolId: 8728, shares: 400n, available: 1000n, lockRegistered: false });
+  assert.deepEqual(plan.calls.map((c) => c.methodName), ["mft_register", "mft_transfer"]);
+  assert.deepEqual(plan.calls[0].args, { token_id: ":8728", account_id: LOCK });
+  assert.equal(plan.calls[0].deposit, 10n ** 22n); // 0.01 NEAR, unused refunded
+  assert.deepEqual(plan.calls[1].args, { token_id: ":8728", receiver_id: LOCK, amount: "400", memo: "nearpool: LP locked forever" });
+  assert.equal(plan.calls[1].deposit, 1n);
+  assert.equal(plan.transactions.length, 1);
+  assert.ok(plan.transactions.every((t) => t.receiverId === REF));
+  // Already registered: transfer only (Ref rejects a second mft_register).
+  assert.deepEqual(planLockShares(native, { poolId: 8728, shares: 1000n, available: 1000n, lockRegistered: true }).calls.map((c) => c.methodName), ["mft_transfer"]);
+  assert.throws(() => planLockShares(native, { poolId: 8728, shares: 1001n, available: 1000n, lockRegistered: true }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-token");
+  assert.throws(() => planLockShares(native, { poolId: 8728, shares: 0n, available: 1000n, lockRegistered: true }), PlanError);
 });
 console.log(`\n${passed} passed`);

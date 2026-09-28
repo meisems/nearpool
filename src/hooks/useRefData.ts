@@ -10,6 +10,7 @@ import {
   getFtMetadata,
   getPool,
   getPoolShares,
+  getLockedShares,
   loadAccountSnapshot,
   type AccountSnapshot,
   type FtMetadata,
@@ -102,6 +103,17 @@ export function usePlatformFee() {
     queryKey: [REF_QUERY_ROOT, "platform-fee"],
     queryFn: getPlatformFee,
     staleTime: Infinity,
+    retry: 1,
+  });
+}
+
+/** LP shares of a pool locked forever (held by the unowned lock account). */
+export function useLockedShares(poolId: number | null) {
+  return useQuery<bigint>({
+    queryKey: [REF_QUERY_ROOT, "locked-shares", poolId],
+    queryFn: () => getLockedShares(poolId as number),
+    enabled: poolId !== null,
+    staleTime: 30_000,
     retry: 1,
   });
 }

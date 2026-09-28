@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   DCL_CONTRACT_ID,
+  LP_LOCK_ACCOUNT_ID,
   FEE_AMOUNT,
   FEE_ENABLED,
   FEE_RECEIVER_ID,
@@ -219,6 +220,28 @@ const SECTIONS: Array<{ id: string; title: string; body: ReactNode }> = [
     ),
   },
   {
+    id: "lock",
+    title: "Lock liquidity (forever)",
+    body: (
+      <>
+        <p>Locking shows traders the liquidity can't be pulled. It is <B>permanent</B>: there is no unlock date and no way back.</p>
+        <Steps>
+          <li>On the token page, with a position in the pool, click <B>Lock liquidity</B>. Or, right after adding liquidity, click <B>Lock these shares forever</B>.</li>
+          <li>Pick how much: <B>25%</B>, <B>50%</B>, <B>100%</B> of your shares, or <B>Just added</B>.</li>
+          <li>Check what it's worth now and its share of the pool.</li>
+          <li>Tick <B>I understand this can't be undone</B>, click <B>Lock forever</B> and approve.</li>
+        </Steps>
+        <Bullets>
+          <li>Your LP shares are transferred (Ref <code>mft_transfer</code>) to <code className="break-all">{LP_LOCK_ACCOUNT_ID.slice(0, 6)}…{LP_LOCK_ACCOUNT_ID.slice(-4)}</code>, the all-zero account. Its key would have to match a public key of all zeros, which nobody holds, so no one can ever withdraw the shares.</li>
+          <li>Trading fees earned by locked shares stay in the pool, locked with them.</li>
+          <li>The pool card shows <B>X% locked forever</B>: anyone can verify it on-chain (Ref <code>get_pool_shares</code> for that account).</li>
+          <li>No nearpool fee. The first lock in a pool registers the lock account there: 0.01 NEAR storage, unused part refunded.</li>
+        </Bullets>
+        <Note>Timed locks (unlock after a date) need a dedicated locker contract; nearpool doesn't offer one yet.</Note>
+      </>
+    ),
+  },
+  {
     id: "fees",
     title: "Fees & costs",
     body: (
@@ -236,6 +259,7 @@ const SECTIONS: Array<{ id: string; title: string; body: ReactNode }> = [
             ["Ref storage top-up", "0.01 NEAR when needed", "your Ref storage"],
             ["First position in a pool", "0.01 NEAR", "LP storage, unused refunded"],
             ["Pool creation", "0.1 NEAR", "pool storage, unused refunded"],
+            ["Liquidity lock (first in a pool)", "0.01 NEAR, no nearpool fee", "lock account's LP storage, unused refunded"],
             ["Gas", "small; 0.05 NEAR kept back", "network"],
           ]}
         />
@@ -271,6 +295,7 @@ const SECTIONS: Array<{ id: string; title: string; body: ReactNode }> = [
           [<code key="r">{REF_FINANCE_CONTRACT_ID}</code>, "Ref pools: deposits, swaps, add_liquidity, pool creation"],
           [<code key="d">{DCL_CONTRACT_ID}</code>, "Rhea concentrated-liquidity pools (e.g. NearPaid coins)"],
           [<code key="w">{WRAP_NEAR_CONTRACT_ID}</code>, "wrapped NEAR (wNEAR)"],
+          [<code key="l" className="break-all">{LP_LOCK_ACCOUNT_ID.slice(0, 6)}…{LP_LOCK_ACCOUNT_ID.slice(-4)}</code>, "unowned account holding locked LP shares (64 zeros)"],
           ...(FEE_ENABLED ? [[<code key="f">{FEE_RECEIVER_ID}</code>, "nearpool fee receiver"] as [ReactNode, ReactNode]] : []),
         ]}
       />
