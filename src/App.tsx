@@ -125,7 +125,8 @@ function Shell() {
   const [splash, setSplash] = useState(shouldShowSplash);
   return (
     // Column layout: the footer always sits at the bottom, even on short pages.
-    <div className="flex min-h-dvh flex-col bg-canvas text-ink">
+    <div className="relative isolate flex min-h-dvh flex-col bg-canvas text-ink">
+      <div className="page-texture" aria-hidden />
       {splash && <SplashScreen onDone={() => setSplash(false)} />}
       <ScrollToTop />
       <PickUpNewVersion />
