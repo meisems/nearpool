@@ -27,6 +27,21 @@ migrations_dir = "migrations"
 #   npx wrangler secret put NEAR_RPC_URL
 # Unset, it defaults to https://rpc.mainnet.near.org.
 [vars]
+# --- Browser build settings (VITE_*) ---
+# Read by vite.config.js at build time and compiled into the site, so they're
+# public: never put an API key here. Changing one needs a redeploy (rebuild).
+# A variable of the same name set in the shell or in Workers Builds settings
+# overrides the value here.
+VITE_NEAR_RPC_URL = "/api/rpc" # the Worker's proxy below; it uses the NEAR_RPC_URL secret (e.g. Lava)
+VITE_NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com"
+VITE_REF_CONTRACT_ID = "v2.ref-finance.near"
+VITE_WRAP_NEAR_CONTRACT_ID = "wrap.near"
+VITE_EXPLORER_URL = "https://nearblocks.io"
+VITE_FEE_RECEIVER = "nearpoolpf.near"
+VITE_FEE_NEAR = "0.1"
+VITE_WALLETCONNECT_PROJECT_ID = "7f0cf24607660fc883b16c16902f5b08"
+
+# --- Worker runtime (/api/rpc proxy, activity feed) ---
 NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com"
 REF_CONTRACT_ID = "v2.ref-finance.near"
 
