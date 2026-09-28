@@ -21,6 +21,27 @@ export const poolRpcProvider = POOL_RPC_URLS[0] === RPC_URLS[0] ? rpcProvider : 
 
 export type ViewArgs = Record<string, unknown>;
 
+/** Every endpoint failed at the network level (rate limited, down, timing out). */
+export const isRpcBusy = (error: unknown) =>
+  /Exceeded \d+ (providers|attempts)|RetriesExceeded|Too Many Requests|\b429\b/i.test(error instanceof Error ? error.message : String(error));
+
+const RPC_RETRY_DELAYS_MS = [800, 2_000];
+
+/**
+ * Retry a read when every RPC endpoint is busy (rate limits clear within
+ * seconds). Contract errors are thrown straight away.
+ */
+export async function withRpcRetry<T>(read: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await read();
+    } catch (error) {
+      if (attempt >= RPC_RETRY_DELAYS_MS.length || !isRpcBusy(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RPC_RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
 /**
  * Execute a read-only (`call_function`) contract method and return its
  * JSON-decoded result. `null` results (e.g. an unregistered
@@ -28,7 +49,7 @@ export type ViewArgs = Record<string, unknown>;
  */
 export async function viewMethod<T>(contractId: string, methodName: string, args: ViewArgs = {}): Promise<T> {
   const provider = contractId === REF_FINANCE_CONTRACT_ID || contractId === DCL_CONTRACT_ID ? poolRpcProvider : rpcProvider;
-  const result = await provider.callFunction<Exclude<T, undefined> & object>(contractId, methodName, args);
+  const result = await withRpcRetry(() => provider.callFunction<Exclude<T, undefined> & object>(contractId, methodName, args));
   return (result === undefined ? null : result) as T;
 }
 
@@ -42,7 +63,7 @@ export interface NativeBalance {
 }
 
 export async function getNativeBalance(accountId: string): Promise<NativeBalance> {
-  const account = await rpcProvider.viewAccount(accountId);
+  const account = await withRpcRetry(() => rpcProvider.viewAccount(accountId));
   const storageCost = BigInt(account.storage_usage) * STORAGE_PRICE_PER_BYTE;
   // Locked (staked) balance also counts toward covering storage.
   const storageReserved = storageCost > account.locked ? storageCost - account.locked : 0n;
