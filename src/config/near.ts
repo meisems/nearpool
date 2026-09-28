@@ -24,7 +24,6 @@ export const NODE_URL: string = resolveRpcUrl(env.VITE_NEAR_RPC_URL || "https://
 
 const DEFAULT_FALLBACK_RPC_URLS = [
   "https://free.rpc.fastnear.com",
-  "https://near.lava.build",
   "https://rpc.mainnet.fastnear.com",
 ];
 

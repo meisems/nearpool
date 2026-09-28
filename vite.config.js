@@ -47,6 +47,17 @@ function versionFile() {
 export default defineConfig({
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   plugins: [react(), tailwindcss(), versionFile()],
+  build: {
+    rollupOptions: {
+      output: {
+        // A prior deployment could have served/cache-poisoned a missing chunk
+        // with the SPA's HTML. Give every build fresh URLs, including vendor chunks.
+        entryFileNames: `assets/${BUILD_ID.replace(/[^a-zA-Z0-9_-]/g, "_")}/[name]-[hash].js`,
+        chunkFileNames: `assets/${BUILD_ID.replace(/[^a-zA-Z0-9_-]/g, "_")}/[name]-[hash].js`,
+        assetFileNames: `assets/${BUILD_ID.replace(/[^a-zA-Z0-9_-]/g, "_")}/[name]-[hash][extname]`,
+      },
+    },
+  },
   server: {
     host: "0.0.0.0",
     port: 3000,
