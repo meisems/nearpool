@@ -27,6 +27,8 @@ NEAR → USDC → token) using Ref's multi-step instant swap.
 
 Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`, `/swap?out=<token>`.
 
+**Step-by-step user guide:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md) (also on the site at `/docs`).
+
 ## Fees
 
 nearpool adds a flat **0.1 NEAR** interface fee to every swap, liquidity injection and pool

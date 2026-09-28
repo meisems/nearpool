@@ -9,7 +9,7 @@ import { Navbar } from "./components/Navbar";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { shouldShowSplash, SplashScreen } from "./components/SplashScreen";
 import { Logo } from "./components/Logo";
-import { HomePage, InfoPage, PoolRedirect, SwapPage, TokenPage, TrackPage } from "./pages";
+import { DocsPage, HomePage, InfoPage, PoolRedirect, SwapPage, TokenPage, TrackPage } from "./pages";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -85,7 +85,7 @@ function Shell() {
           <Route path="/pool/:poolId" element={<PoolRedirect />} />
           <Route path="/track" element={<TrackPage />} />
           <Route path="/swap" element={<SwapPage />} />
-          <Route path="/docs" element={<InfoPage kind="docs" />} />
+          <Route path="/docs" element={<DocsPage />} />
           <Route path="/terms" element={<InfoPage kind="terms" />} />
           <Route path="/privacy-policy" element={<InfoPage kind="privacy" />} />
           {/* Older routes. */}
