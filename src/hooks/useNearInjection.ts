@@ -13,10 +13,14 @@ import {
   getPoolShares,
   loadAccountSnapshot,
   planInjection,
+  planZapInjection,
+  PlanError,
+  quoteZap,
   toWalletTransactions,
   type InjectionPlan,
   type PlannedTransaction,
   type RefPool,
+  type SwapRoute,
 } from "../lib/refFinance";
 import { publishInjection } from "../lib/activity";
 import { REF_QUERY_ROOT } from "./useRefData";
@@ -52,6 +56,11 @@ export interface InjectionRequest {
   slippageBps: number;
   useRefDeposits: boolean;
   payWithNative: boolean;
+  /**
+   * NEAR only: put in `nearIn` NEAR; the other side(s) are bought with part
+   * of it via `routes` (null for a wNEAR side). `amounts` is ignored.
+   */
+  nearOnly?: { nearIn: bigint; routes: (SwapRoute | null)[] };
 }
 
 export interface InjectionReceipt {
@@ -135,21 +144,37 @@ export function useNearInjection() {
 
       try {
         /* Step A (pre-flight): fresh pool, storage registrations, balances. */
+        const zap = request.nearOnly;
+        const tokenIds = [
+          ...new Set([...request.pool.tokenIds, ...(zap ? [WRAP_NEAR_CONTRACT_ID, ...zap.routes.flatMap((r) => r?.path ?? [])] : [])]),
+        ];
         const [pool, snapshot, existingShares, fee] = await Promise.all([
           getPool(request.pool.id),
-          loadAccountSnapshot(accountId, request.pool.tokenIds),
+          loadAccountSnapshot(accountId, tokenIds),
           getPoolShares(request.pool.id, accountId),
           getPlatformFee(),
         ]);
-        const nextPlan = planInjection(snapshot, {
-          pool,
-          amounts: request.amounts,
-          slippageBps: request.slippageBps,
-          useRefDeposits: request.useRefDeposits,
-          payWithNative: request.payWithNative,
-          existingShares,
-          fee,
-        });
+        let nextPlan: InjectionPlan;
+        if (zap) {
+          // Re-read every pool on the routes so the split and minimums use current reserves.
+          const fresh = new Map<number, RefPool>([[pool.id, pool]]);
+          const routeIds = [...new Set(zap.routes.flatMap((r) => r?.pools.map((p) => p.id) ?? []))].filter((id) => id !== pool.id);
+          (await Promise.all(routeIds.map((id) => getPool(id)))).forEach((p) => fresh.set(p.id, p));
+          const routes = zap.routes.map((r) => (r ? { path: r.path, pools: r.pools.map((p) => fresh.get(p.id)!) } : null));
+          const quote = quoteZap(pool, zap.nearIn, routes);
+          if (!quote) throw new PlanError("no-liquidity", "couldn't buy this token with NEAR");
+          nextPlan = planZapInjection(snapshot, { pool, quote, slippageBps: request.slippageBps, existingShares, fee });
+        } else {
+          nextPlan = planInjection(snapshot, {
+            pool,
+            amounts: request.amounts,
+            slippageBps: request.slippageBps,
+            useRefDeposits: request.useRefDeposits,
+            payWithNative: request.payWithNative,
+            existingShares,
+            fee,
+          });
+        }
         setPlan(nextPlan);
 
         /* Steps B–D: one wallet approval for the whole ordered batch. */

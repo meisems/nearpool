@@ -483,6 +483,54 @@ function assertNativeBudget(snapshot: Pick<AccountSnapshot, "native">, calls: Pl
   }
 }
 
+/**
+ * Ref account storage (register or top up) and `register_tokens` for
+ * non-whitelisted tokens, for the token entries a batch will add to the
+ * user's Ref account.
+ */
+function refAccountCalls(snapshot: AccountSnapshot, newEntries: TokenAccountState[]): PlannedCall[] {
+  const accountId = snapshot.accountId;
+  const calls: PlannedCall[] = [];
+  if (!snapshot.refStorage) {
+    calls.push({
+      step: "storage",
+      receiverId: REF_FINANCE_CONTRACT_ID,
+      methodName: "storage_deposit",
+      args: { account_id: accountId, registration_only: false },
+      gas: GAS.STORAGE_DEPOSIT,
+      deposit: REF_ACCOUNT_REGISTRATION_DEPOSIT,
+      label: `register ${accountId} on Ref Finance · ${fmtNear(REF_ACCOUNT_REGISTRATION_DEPOSIT)}`,
+    });
+  } else {
+    const needed = BigInt(newEntries.length) * REF_STORAGE_PER_TOKEN;
+    if (needed > snapshot.refStorage.available) {
+      const topUp = maxBig(REF_STORAGE_TOP_UP, needed - snapshot.refStorage.available);
+      calls.push({
+        step: "storage",
+        receiverId: REF_FINANCE_CONTRACT_ID,
+        methodName: "storage_deposit",
+        args: { account_id: accountId, registration_only: false },
+        gas: GAS.STORAGE_DEPOSIT,
+        deposit: topUp,
+        label: `top up Ref storage · ${fmtNear(topUp)}`,
+      });
+    }
+  }
+  const needsRegistration = newEntries.filter((t) => !t.whitelisted).map((t) => t.tokenId);
+  if (needsRegistration.length > 0) {
+    calls.push({
+      step: "storage",
+      receiverId: REF_FINANCE_CONTRACT_ID,
+      methodName: "register_tokens",
+      args: { token_ids: needsRegistration },
+      gas: GAS.REGISTER_TOKENS,
+      deposit: ONE_YOCTO,
+      label: `register ${needsRegistration.length} non-whitelisted token${needsRegistration.length > 1 ? "s" : ""} in your Ref account`,
+    });
+  }
+  return calls;
+}
+
 /* ---------------------------------------------------------------- platform fee */
 
 export interface PlatformFee {
@@ -562,6 +610,8 @@ export interface InjectionPlan {
   /** Interface fee included in this batch (0 when none). */
   fee: bigint;
   steps: PlanStep[];
+  /** Set for NEAR-only injections: how the NEAR was split and swapped. */
+  zap?: ZapQuote;
 }
 
 export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent): InjectionPlan {
@@ -586,45 +636,8 @@ export function planInjection(snapshot: AccountSnapshot, intent: InjectionIntent
   const splits = tokens.map((token, i) => splitFunding(amounts[i], token.refDeposit, useRefDeposits));
 
   /* Step A — Ref account storage + per-account token registration. */
-  const refCalls: PlannedCall[] = [];
   const newRefEntries = tokens.filter((t, i) => splits[i].toDeposit > 0n && !t.registeredOnRefAccount);
-  if (!snapshot.refStorage) {
-    refCalls.push({
-      step: "storage",
-      receiverId: REF_FINANCE_CONTRACT_ID,
-      methodName: "storage_deposit",
-      args: { account_id: accountId, registration_only: false },
-      gas: GAS.STORAGE_DEPOSIT,
-      deposit: REF_ACCOUNT_REGISTRATION_DEPOSIT,
-      label: `register ${accountId} on Ref Finance · ${fmtNear(REF_ACCOUNT_REGISTRATION_DEPOSIT)}`,
-    });
-  } else {
-    const needed = BigInt(newRefEntries.length) * REF_STORAGE_PER_TOKEN;
-    if (needed > snapshot.refStorage.available) {
-      const topUp = maxBig(REF_STORAGE_TOP_UP, needed - snapshot.refStorage.available);
-      refCalls.push({
-        step: "storage",
-        receiverId: REF_FINANCE_CONTRACT_ID,
-        methodName: "storage_deposit",
-        args: { account_id: accountId, registration_only: false },
-        gas: GAS.STORAGE_DEPOSIT,
-        deposit: topUp,
-        label: `top up Ref storage · ${fmtNear(topUp)}`,
-      });
-    }
-  }
-  const needsRegistration = newRefEntries.filter((t) => !t.whitelisted).map((t) => t.tokenId);
-  if (needsRegistration.length > 0) {
-    refCalls.push({
-      step: "storage",
-      receiverId: REF_FINANCE_CONTRACT_ID,
-      methodName: "register_tokens",
-      args: { token_ids: needsRegistration },
-      gas: GAS.REGISTER_TOKENS,
-      deposit: ONE_YOCTO,
-      label: `register ${needsRegistration.length} non-whitelisted token${needsRegistration.length > 1 ? "s" : ""} in your Ref account`,
-    });
-  }
+  const refCalls = refAccountCalls(snapshot, newRefEntries);
 
   /* Steps A (token storage), B (wrap) and C (deposit), per token. */
   const tokenCalls: PlannedCall[] = [];
@@ -865,6 +878,196 @@ export function planSwap(snapshot: AccountSnapshot, intent: SwapIntent): SwapPla
     wrapAmount,
     fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
+  };
+}
+
+/* ---------------------------------------------------------------- NEAR-only injection (zap) */
+
+/**
+ * Run `route` for `amountIn` against pool reserves in `state` (pool id →
+ * reserves), updating them as Ref would, so a later hop or the target pool
+ * sees the post-swap price. Returns the output (0 if a hop can't fill).
+ */
+function runRoute(route: SwapRoute, amountIn: bigint, state: Map<number, bigint[]>): bigint {
+  let amount = amountIn;
+  for (let i = 0; i < route.pools.length; i++) {
+    const pool = route.pools[i];
+    const reserves = state.get(pool.id) ?? [...pool.reserves];
+    const inIdx = pool.tokenIds.indexOf(route.path[i]);
+    const outIdx = pool.tokenIds.indexOf(route.path[i + 1]);
+    if (inIdx < 0 || outIdx < 0) return 0n;
+    const out = estimateSwapOut(amount, reserves[inIdx], reserves[outIdx], pool.totalFeeBps);
+    if (out <= 0n) return 0n;
+    const next = [...reserves];
+    next[inIdx] += amount;
+    next[outIdx] -= out;
+    state.set(pool.id, next);
+    amount = out;
+  }
+  return amount;
+}
+
+export interface ZapQuote {
+  /** NEAR (yocto) put in, split across the pool's sides. */
+  nearIn: bigint;
+  /** NEAR allocated to each side, in pool token order. */
+  spend: bigint[];
+  /** Route that buys each side with wNEAR; null for a wNEAR side. */
+  routes: (SwapRoute | null)[];
+  /** Expected amount of each side after the swaps, pool order. */
+  amounts: bigint[];
+  /** Target pool reserves after the swaps (a route may pass through it). */
+  reserves: bigint[];
+}
+
+/**
+ * Split `nearIn` so that, after buying the pool's non-NEAR side(s), the
+ * amounts match the pool's ratio. A route through the target pool itself is
+ * accounted for (the swap moves its price first). An empty pool takes a
+ * 50/50 split at market prices, which sets its starting price.
+ */
+export function quoteZap(pool: RefPool, nearIn: bigint, routes: (SwapRoute | null)[]): ZapQuote | null {
+  if (pool.tokenIds.length !== 2 || routes.length !== 2 || nearIn <= 1n) return null;
+  for (let i = 0; i < 2; i++) {
+    const side = pool.tokenIds[i];
+    const route = routes[i];
+    if (side === WRAP_NEAR_CONTRACT_ID ? route !== null : !route || route.path[0] !== WRAP_NEAR_CONTRACT_ID || route.path[route.path.length - 1] !== side) {
+      return null;
+    }
+  }
+  const evaluate = (toFirst: bigint) => {
+    const spend = [toFirst, nearIn - toFirst];
+    const state = new Map<number, bigint[]>();
+    const amounts = spend.map((amount, i) => (routes[i] ? runRoute(routes[i]!, amount, state) : amount));
+    const reserves = state.get(pool.id) ?? [...pool.reserves];
+    return { spend, amounts, reserves };
+  };
+
+  const empty = pool.sharesTotalSupply === 0n || pool.reserves.some((r) => r === 0n);
+  let result = evaluate(nearIn / 2n);
+  if (!empty) {
+    // Smallest share for side 0 where amounts[0] / reserves[0] ≥ amounts[1] / reserves[1].
+    let lo = 1n;
+    let hi = nearIn - 1n;
+    while (lo < hi) {
+      const mid = (lo + hi) / 2n;
+      const r = evaluate(mid);
+      if (r.amounts[0] * r.reserves[1] >= r.amounts[1] * r.reserves[0]) hi = mid;
+      else lo = mid + 1n;
+    }
+    result = evaluate(lo);
+  }
+  if (result.amounts.some((a) => a <= 0n)) return null;
+  return { nearIn, routes, ...result };
+}
+
+export interface ZapIntent {
+  /** Target pool, freshly read. */
+  pool: RefPool;
+  quote: ZapQuote;
+  slippageBps: number;
+  existingShares: bigint;
+  fee?: PlatformFee | null;
+}
+
+/**
+ * Add liquidity with NEAR only, in one approval:
+ * wrap and deposit the NEAR into Ref, buy the other side(s) with Ref `swap`
+ * on the deposit, then `add_liquidity` from the deposits. The swaps and
+ * `add_liquidity` share one transaction, so if a swap misses its minimum
+ * nothing is added and the wNEAR stays in your Ref balance. The token side
+ * uses each swap's minimum output; anything received above it (and any
+ * unused NEAR) stays in your Ref balance.
+ */
+export function planZapInjection(snapshot: AccountSnapshot, intent: ZapIntent): InjectionPlan {
+  const { pool, quote, slippageBps, existingShares, fee } = intent;
+  const accountId = snapshot.accountId;
+  if (pool.kind !== SIMPLE_POOL) {
+    throw new PlanError("unsupported-pool", `pool #${pool.id} is a ${pool.kind.toLowerCase().replace(/_/g, " ")}; only simple pools are supported`);
+  }
+  if (quote.nearIn <= 0n) throw new PlanError("zero-amount", "enter an amount");
+  const state = (id: string) => {
+    const t = snapshot.tokens[id];
+    if (!t) throw new Error(`missing account state for ${id}`);
+    return t;
+  };
+  const wnear = state(WRAP_NEAR_CONTRACT_ID);
+
+  // What add_liquidity takes: the NEAR side as allocated, bought sides at their swap minimum.
+  const minOuts = quote.amounts.map((a, i) => (quote.routes[i] ? applySlippage(a, slippageBps) : a));
+  const amounts = minOuts;
+  if (amounts.some((a) => a <= 0n)) throw new PlanError("zero-amount", "amount too small");
+  const supply = pool.sharesTotalSupply;
+  const estimate = estimateAddLiquidity(amounts, quote.reserves, supply);
+  if (estimate.shares <= 0n) throw new PlanError("no-liquidity", "amount is too small to mint any LP shares");
+  const minAmounts = estimate.initializesPool ? [...amounts] : minAmountsFor(estimate.usedAmounts, slippageBps);
+
+  // Ref account entries this batch creates: wNEAR, every token a route touches, both pool tokens.
+  const touched = new Set<string>([WRAP_NEAR_CONTRACT_ID, ...pool.tokenIds]);
+  for (const route of quote.routes) route?.path.forEach((id) => touched.add(id));
+  const newEntries = [...touched].map(state).filter((t) => !t.registeredOnRefAccount);
+  const refCalls = refAccountCalls(snapshot, newEntries);
+
+  // Wrap (shortfall only) and deposit all the NEAR into Ref as wNEAR.
+  const wrapsHere = quote.nearIn > wnear.walletBalance;
+  const fundCalls = [...tokenStorageCalls(wnear, accountId, { user: wrapsHere, ref: true })];
+  const funding = fundingCalls(wnear, quote.nearIn, true);
+  fundCalls.push(...funding.calls);
+
+  const swapCalls: PlannedCall[] = [];
+  quote.routes.forEach((route, side) => {
+    if (!route) return;
+    const last = route.pools.length - 1;
+    const sym = displaySymbol(route.path[last + 1], snapshot.tokens[route.path[last + 1]]?.metadata);
+    swapCalls.push({
+      step: "swap",
+      receiverId: REF_FINANCE_CONTRACT_ID,
+      methodName: "swap",
+      args: {
+        actions: route.pools.map((p, i) => ({
+          pool_id: p.id,
+          token_in: route.path[i],
+          token_out: route.path[i + 1],
+          ...(i === 0 ? { amount_in: quote.spend[side].toString() } : {}),
+          min_amount_out: i === last ? minOuts[side].toString() : "0",
+        })),
+      },
+      gas: GAS.REF_SWAP,
+      deposit: ONE_YOCTO,
+      label: `buy ${sym} with ${fmtAmount(quote.spend[side], NEAR_DECIMALS)} NEAR in Ref · min ${fmtAmount(minOuts[side], state(route.path[last + 1]).metadata.decimals)} ${sym}`,
+    });
+  });
+
+  const lpDeposit = existingShares > 0n ? ONE_YOCTO : LP_STORAGE_DEPOSIT;
+  const injectCall: PlannedCall = {
+    step: "inject",
+    receiverId: REF_FINANCE_CONTRACT_ID,
+    methodName: "add_liquidity",
+    args: { pool_id: pool.id, amounts: amounts.map(String), min_amounts: minAmounts.map(String) },
+    gas: GAS.ADD_LIQUIDITY,
+    deposit: lpDeposit,
+    label: `add liquidity to pool #${pool.id}${existingShares > 0n ? "" : ` · ${fmtNear(lpDeposit)} LP storage, unused part refunded`}`,
+  };
+
+  const calls = [...refCalls, ...fundCalls, ...swapCalls, injectCall, ...(fee ? [feeCall(fee)] : [])];
+  assertNativeBudget(snapshot, calls);
+  const transactions = groupCalls(calls);
+  // The swaps and add_liquidity must land in one transaction to stay all-or-nothing.
+  if (!transactions.some((tx) => tx.calls.includes(injectCall) && swapCalls.every((c) => tx.calls.includes(c)))) {
+    throw new PlanError("unsupported-pool", "this route needs too much gas for one transaction");
+  }
+  return {
+    calls,
+    transactions,
+    usedAmounts: estimate.usedAmounts,
+    minAmounts,
+    expectedShares: estimate.shares,
+    walletDeposits: pool.tokenIds.map((id) => (id === WRAP_NEAR_CONTRACT_ID ? quote.nearIn : 0n)),
+    refDepositsUsed: [0n, 0n],
+    wrapAmount: funding.wrap,
+    fee: fee?.amount ?? 0n,
+    steps: [...new Set(calls.map((c) => c.step))],
+    zap: quote,
   };
 }
 

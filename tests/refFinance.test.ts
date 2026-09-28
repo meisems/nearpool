@@ -8,7 +8,7 @@ import {
   applySlippage, estimateAddLiquidity, estimateSwapOut, INIT_SHARES_SUPPLY, quoteCounterAmount, splitFunding, swapPriceImpactBps, spotPrice,
 } from "../src/utils/zapMath";
 import {
-  groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError, bestRoute, quoteRoute, planCreatePool,
+  groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError, bestRoute, quoteRoute, planCreatePool, quoteZap, planZapInjection,
   type AccountSnapshot, type RefPool, type TokenAccountState, type PlannedCall,
 } from "../src/lib/refFinance";
 import { findOutcomeFailure, outcomeReturnValue, isValidAccountId } from "../src/lib/near";
@@ -278,5 +278,75 @@ test("create pool: add_simple_pool with storage deposit, then the fee; budget an
   assert.throws(() => planCreatePool(native, { tokenIds: ["a.near", "wrap.near"], feeBps: 0 }), PlanError);
   const poor = { total: NEAR / 10n, storageReserved: 0n, available: NEAR / 10n };
   assert.throws(() => planCreatePool(poor, { tokenIds: ["a.near", "wrap.near"], feeBps: 30, fee }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-near");
+});
+test("NEAR-only: split matches the pool ratio after swapping through the same pool", () => {
+  const route = { pools: [pool], path: ["wrap.near", USDC] };
+  const q = quoteZap(pool, 10n * NEAR, [null, route])!;
+  assert.ok(q);
+  assert.equal(q.spend[0] + q.spend[1], 10n * NEAR);
+  assert.equal(q.amounts[0], q.spend[0]); // the NEAR side is kept as is
+  // Swapping moved the pool: more wNEAR, less USDC than before.
+  assert.ok(q.reserves[0] > pool.reserves[0] && q.reserves[1] < pool.reserves[1]);
+  // After the swap, the two sides match the pool's new ratio (within one unit of rounding).
+  const needNear = (q.amounts[1] * q.reserves[0]) / q.reserves[1];
+  assert.ok(needNear <= q.amounts[0] && q.amounts[0] - needNear < q.reserves[0] / q.reserves[1] + 1n, "ratio mismatch");
+  // Roughly half the NEAR buys USDC.
+  assert.ok(q.spend[1] > 49n * NEAR / 10n && q.spend[1] < 51n * NEAR / 10n);
+  // Routes must start at wNEAR and end at the side they buy.
+  assert.equal(quoteZap(pool, 10n * NEAR, [route, null]), null);
+  assert.equal(quoteZap(pool, 10n * NEAR, [null, null]), null);
+});
+test("NEAR-only plan: wrap + deposit, then swap and add_liquidity in one Ref transaction", () => {
+  const route = { pools: [pool], path: ["wrap.near", USDC] };
+  const q = quoteZap(pool, 10n * NEAR, [null, route])!;
+  const snap = snapshot({}, { [USDC]: token(USDC, 6, { walletBalance: 0n }) });
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
+  const plan = planZapInjection(snap, { pool, quote: q, slippageBps: 50, existingShares: 0n, fee });
+  // Ref storage already covers the new entries, so no top-up.
+  assert.deepEqual(methods(plan.calls), ["W:near_deposit", "W:ft_transfer_call", "R:swap", "R:add_liquidity", "U:transfer"]);
+  assert.equal(plan.wrapAmount, 10n * NEAR);
+  const swap = plan.calls.find((c) => c.methodName === "swap")!;
+  const minOut = applySlippage(q.amounts[1], 50);
+  assert.deepEqual(swap.args.actions, [{ pool_id: 42, token_in: "wrap.near", token_out: USDC, amount_in: q.spend[1].toString(), min_amount_out: minOut.toString() }]);
+  assert.equal(swap.deposit, 1n);
+  const add = plan.calls.find((c) => c.methodName === "add_liquidity")!;
+  assert.deepEqual(add.args.amounts, [q.spend[0].toString(), minOut.toString()]);
+  // swap + add_liquidity share a transaction, so a failed swap adds nothing.
+  const refTx = plan.transactions.find((t) => t.calls.includes(add))!;
+  assert.ok(refTx.calls.includes(swap));
+  assert.deepEqual(plan.transactions.map((t) => t.receiverId), ["wrap.near", REF, "nearpoolpf.near"]);
+  assert.ok(plan.expectedShares > 0n);
+  assert.ok(plan.zap === q);
+  // Not enough NEAR for the deposit + storage + fee.
+  const poor = snapshot({ native: { total: 5n * NEAR, storageReserved: 0n, available: 5n * NEAR } }, snap.tokens);
+  assert.throws(() => planZapInjection(poor, { pool, quote: q, slippageBps: 50, existingShares: 0n, fee }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-near");
+});
+test("NEAR-only into a pool without NEAR, and into an empty pool", () => {
+  const NPAID = "npaid-831d2b.nearpaid.near";
+  const second: RefPool = { id: 77, kind: "SIMPLE_POOL", tokenIds: [USDC, NPAID], reserves: [2_000_000_000n, 10n ** 30n], totalFeeBps: 20, sharesTotalSupply: NEAR };
+  const toUsdc = { pools: [pool], path: ["wrap.near", USDC] };
+  const toNpaid = { pools: [pool, second], path: ["wrap.near", USDC, NPAID] };
+  const q = quoteZap(second, 10n * NEAR, [toUsdc, toNpaid])!;
+  assert.ok(q && q.spend[0] > 0n && q.spend[1] > 0n);
+  const snap = snapshot({}, { [NPAID]: token(NPAID, 24, { whitelisted: false }) });
+  const plan = planZapInjection(snap, { pool: second, quote: q, slippageBps: 100, existingShares: 1n });
+  const swaps = plan.calls.filter((c) => c.methodName === "swap");
+  assert.equal(swaps.length, 2);
+  // Chained hop: amount_in only on the first action.
+  assert.equal((swaps[1].args.actions as Array<Record<string, unknown>>)[1].amount_in, undefined);
+  // The non-whitelisted token is registered in the Ref account first.
+  assert.ok(plan.calls.some((c) => c.methodName === "register_tokens" && (c.args.token_ids as string[]).includes(NPAID)));
+  const add = plan.calls.find((c) => c.methodName === "add_liquidity")!;
+  const refTx = plan.transactions.find((t) => t.calls.includes(add))!;
+  assert.ok(swaps.every((c) => refTx.calls.includes(c)));
+  for (const tx of plan.transactions) assert.ok(tx.calls.reduce((g, c) => g + c.gas, 0n) <= 300n * 10n ** 12n);
+  // Empty pool: half the NEAR buys the token at market price; min_amounts equal amounts.
+  const fresh: RefPool = { ...pool, id: 99, reserves: [0n, 0n], sharesTotalSupply: 0n };
+  const other: RefPool = { ...pool, id: 5 };
+  const qe = quoteZap(fresh, 10n * NEAR, [null, { pools: [other], path: ["wrap.near", USDC] }])!;
+  assert.equal(qe.spend[1], 5n * NEAR);
+  const pe = planZapInjection(snapshot(), { pool: fresh, quote: qe, slippageBps: 50, existingShares: 0n });
+  const addE = pe.calls.find((c) => c.methodName === "add_liquidity")!;
+  assert.deepEqual(addE.args.min_amounts, addE.args.amounts);
 });
 console.log(`\n${passed} passed`);

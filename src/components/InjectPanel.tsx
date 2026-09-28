@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useAccountSnapshot, useFtMetadata, usePlatformFee, usePoolShares } from "../hooks/useRefData";
+import { useAccountSnapshot, useFtMetadata, usePlatformFee, usePoolShares, useSwapRoutes } from "../hooks/useRefData";
 import { useNearInjection, type InjectionPhase } from "../hooks/useNearInjection";
 import {
   explorerTxUrl,
@@ -11,7 +11,20 @@ import {
   SLIPPAGE_OPTIONS_BPS,
   WRAP_NEAR_CONTRACT_ID,
 } from "../config/near";
-import { counterToken, displaySymbol, PlanError, planInjection, type InjectionPlan, type RefPool, type TokenAccountState } from "../lib/refFinance";
+import {
+  bestRoute,
+  counterToken,
+  displaySymbol,
+  PlanError,
+  planInjection,
+  planZapInjection,
+  quoteZap,
+  type InjectionPlan,
+  type PlatformFee,
+  type RefPool,
+  type SwapRoute,
+  type TokenAccountState,
+} from "../lib/refFinance";
 import { fmtAmount, parseUnits, rawToInput, shortHash } from "../lib/format";
 import { estimateAddLiquidity, LP_SHARE_DECIMALS, maxBig, minBig, mulDiv, quoteCounterAmount } from "../utils/zapMath";
 import { useToast } from "./Toasts";
@@ -121,6 +134,168 @@ function Leg({
   );
 }
 
+const planErrorText = (e: unknown) => (e instanceof PlanError ? e.message : e instanceof Error ? e.message : String(e));
+
+/**
+ * NEAR only: one NEAR amount. Part of it buys the other side (through the
+ * best Ref route, which may be this pool), the rest goes in as wNEAR, all in
+ * one approval. Works for any pool whose tokens can be bought with NEAR.
+ */
+function NearOnlyForm({
+  pool,
+  symbols,
+  decimals,
+  slipBps,
+  fee,
+  existingShares,
+  inj,
+  footer,
+}: {
+  footer: ReactNode;
+  pool: RefPool;
+  symbols: string[];
+  decimals: number[];
+  slipBps: number;
+  fee: PlatformFee | null;
+  existingShares: bigint | undefined;
+  inj: ReturnType<typeof useNearInjection>;
+}) {
+  const { accountId, signIn } = useNearWallet();
+  const W = WRAP_NEAR_CONTRACT_ID;
+  const [input, setInput] = useState("");
+  const nearIn = parseUnits(input, NEAR_DECIMALS) ?? 0n;
+  useEffect(() => {
+    if (inj.phase === "success") setInput("");
+  }, [inj.phase]);
+
+  const r0 = useSwapRoutes(pool.tokenIds[0] !== W ? W : null, pool.tokenIds[0]);
+  const r1 = useSwapRoutes(pool.tokenIds[1] !== W ? W : null, pool.tokenIds[1]);
+  const probe = nearIn > 1n ? nearIn / 2n : 10n ** 24n;
+  // Best route per side for about half the amount; null = the side is NEAR, undefined = no route.
+  const routes = useMemo(
+    () =>
+      [r0, r1].map((q, i): SwapRoute | null | undefined =>
+        pool.tokenIds[i] === W ? null : bestRoute(q.data ?? [], probe)?.route,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [r0.data, r1.data, probe, pool.id],
+  );
+  const routesLoading = r0.isLoading || r1.isLoading;
+  const missing = routes.findIndex((r) => r === undefined);
+
+  const touched = useMemo(
+    () => [...new Set([W, ...pool.tokenIds, ...routes.flatMap((r) => r?.path ?? [])])],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routes, pool.id],
+  );
+  const snapshot = useAccountSnapshot(touched);
+  const wnear = snapshot.data?.tokens[W];
+  const native = snapshot.data?.native.available;
+  const max = spendable(wnear, native ?? 0n, false, true, fee?.amount ?? 0n);
+
+  const quote = useMemo(
+    () => (missing < 0 && nearIn > 1n ? quoteZap(pool, nearIn, routes as (SwapRoute | null)[]) : null),
+    [pool, nearIn, routes, missing],
+  );
+  const preview = useMemo((): { plan: InjectionPlan | null; error: string | null } => {
+    if (!quote || !snapshot.data || existingShares === undefined) return { plan: null, error: null };
+    // The snapshot may not have caught up with a newly chosen route yet.
+    if (touched.some((id) => !snapshot.data!.tokens[id])) return { plan: null, error: null };
+    try {
+      return { plan: planZapInjection(snapshot.data, { pool, quote, slippageBps: slipBps, existingShares, fee }), error: null };
+    } catch (e) {
+      return { plan: null, error: planErrorText(e) };
+    }
+  }, [quote, snapshot.data, touched, pool, slipBps, existingShares, fee]);
+
+  const empty = pool.sharesTotalSupply === 0n;
+  const cta = ((): { label: string; disabled: boolean; onClick?: () => void } => {
+    if (!accountId) return { label: "Connect wallet", disabled: false, onClick: signIn };
+    if (inj.busy) return { label: inj.awaitingWallet ? "Confirm in wallet" : "Working…", disabled: true };
+    if (routesLoading) return { label: "Finding route…", disabled: true };
+    if (missing >= 0) return { label: `Can't buy ${symbols[missing]} with NEAR`, disabled: true };
+    if (nearIn <= 0n) return { label: "Enter an amount", disabled: true };
+    if (!snapshot.data || existingShares === undefined) return { label: "Checking balances…", disabled: true };
+    if (nearIn > max) return { label: "Not enough NEAR", disabled: true };
+    if (!quote) return { label: "Not enough liquidity", disabled: true };
+    if (preview.error) return { label: preview.error, disabled: true };
+    if (!preview.plan) return { label: "Checking balances…", disabled: true };
+    return {
+      label: empty ? "Create position with NEAR" : "Add with NEAR",
+      disabled: false,
+      onClick: () =>
+        void inj.run({
+          pool,
+          amounts: [0n, 0n],
+          slippageBps: slipBps,
+          useRefDeposits: false,
+          payWithNative: true,
+          nearOnly: { nearIn, routes: routes as (SwapRoute | null)[] },
+        }),
+    };
+  })();
+
+  const plan = preview.plan;
+  return (
+    <>
+      <div className="mt-3">
+        <Leg
+          tokenId={W}
+          symbol="NEAR"
+          decimals={NEAR_DECIMALS}
+          value={input}
+          onChange={setInput}
+          onMax={() => setInput(max > 0n ? rawToInput(max, NEAR_DECIMALS, 6) : "")}
+          state={wnear}
+          native={native}
+          connected={!!accountId}
+          auto={false}
+        />
+      </div>
+
+      {quote && (
+        <dl className="mt-3 space-y-1.5 text-xs">
+          {quote.routes.map((route, i) =>
+            route ? (
+              <div key={i} className="flex justify-between gap-3">
+                <dt className="text-muted">Buys</dt>
+                <dd className="truncate text-right text-ink tabular">
+                  ≈{fmtAmount(quote.amounts[i], decimals[i])} {symbols[i]}
+                  <span className="text-faint"> · {fmtAmount(quote.spend[i], NEAR_DECIMALS)} NEAR · {route.pools.map((p) => `#${p.id}`).join(" → ")}</span>
+                </dd>
+              </div>
+            ) : null,
+          )}
+          {plan && (
+            <>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted">Adds</dt>
+                <dd className="truncate text-right text-ink tabular">
+                  {pool.tokenIds.map((_, i) => `${fmtAmount(plan.usedAmounts[i], decimals[i])} ${symbols[i]}`).join(" + ")}
+                </dd>
+              </div>
+              <div className="flex justify-between"><dt className="text-muted">LP shares</dt><dd className="text-ink tabular">{fmtAmount(plan.expectedShares, LP_SHARE_DECIMALS)}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted">Transactions</dt><dd className="text-ink tabular">{plan.transactions.length} · 1 approval</dd></div>
+            </>
+          )}
+          <p className="pt-1 text-faint">{empty ? "Empty pool: sets the starting price at the market rate. " : ""}Leftovers stay in your Ref balance.</p>
+        </dl>
+      )}
+
+      {footer}
+      <NearOnlyCta cta={cta} busy={inj.busy} />
+    </>
+  );
+}
+
+function NearOnlyCta({ cta, busy }: { cta: { label: string; disabled: boolean; onClick?: () => void }; busy: boolean }) {
+  return (
+    <Button size="lg" className="mt-4 w-full" disabled={cta.disabled} loading={busy} onClick={cta.onClick}>
+      <span className="truncate">{cta.label}</span>
+    </Button>
+  );
+}
+
 /** Add liquidity to `pool`, with `tokenId` (the pasted token) shown first. */
 export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool; tokenId: string; onTrack?: () => void; tracked?: boolean }) {
   const { accountId, signIn } = useNearWallet();
@@ -151,6 +326,7 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const [wrapNative, setWrapNative] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [mode, setMode] = useState<"pair" | "near">("pair");
 
   // Reset the form only when the pool or token actually changes, not when a
   // refetch (tab focus, polling) hands back a fresh pool object.
@@ -233,6 +409,34 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
 
   const hasNear = pool.tokenIds.includes(WRAP_NEAR_CONTRACT_ID);
 
+  const footer = (
+    <>
+      {fee && (
+        <div className="mt-1 flex items-center justify-between text-sm">
+          <span className="text-muted">Fee</span>
+          <span className="text-ink tabular">{fmtAmount(fee.amount, NEAR_DECIMALS)} NEAR</span>
+        </div>
+      )}
+
+      {inj.phase !== "idle" && inj.phase !== "success" && (
+        <div className="mt-4">
+          <Progress phase={inj.phase} plan={inj.plan} />
+          {inj.phase === "error" && inj.error && (
+            <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">
+              {inj.error}
+              {inj.failedTxHash && (
+                <a href={explorerTxUrl(inj.failedTxHash)} target="_blank" rel="noreferrer" className="ml-1 underline">
+                  {shortHash(inj.failedTxHash)}
+                </a>
+              )}
+              <button onClick={inj.reset} className="ml-2 font-semibold underline">Dismiss</button>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex items-center justify-between">
@@ -280,6 +484,25 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
         </div>
       </div>
 
+      <div className="mt-3 grid grid-cols-2 gap-1 rounded-xl bg-card2 p-1 text-sm font-medium" role="tablist" aria-label="Deposit with">
+        {(["pair", "near"] as const).map((m) => (
+          <button
+            key={m}
+            role="tab"
+            aria-selected={mode === m}
+            onClick={() => setMode(m)}
+            disabled={inj.busy}
+            className={`h-8 rounded-lg transition ${mode === m ? "bg-card text-ink shadow-sm" : "text-muted hover:text-ink"}`}
+          >
+            {m === "pair" ? "Two tokens" : "NEAR only"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "near" ? (
+        <NearOnlyForm pool={pool} symbols={symbols} decimals={decimals} slipBps={slipBps} fee={fee} existingShares={shares.data} inj={inj} footer={footer} />
+      ) : (
+      <>
       <div className="mt-3 space-y-1.5">
         {view.map((poolIdx, n) => {
           const i = poolIdx as 0 | 1;
@@ -350,33 +573,17 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
         </div>
       )}
 
-      {fee && (
-        <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="text-muted">Fee</span>
-          <span className="text-ink tabular">{fmtAmount(fee.amount, NEAR_DECIMALS)} NEAR</span>
-        </div>
+      {footer}
+      {short !== undefined && pool.tokenIds[short] !== WRAP_NEAR_CONTRACT_ID && (
+        <button onClick={() => setMode("near")} className="mt-3 w-full text-center text-xs font-semibold text-accent hover:underline">
+          No {symbols[short]}? Add with NEAR only
+        </button>
       )}
-
-      {inj.phase !== "idle" && inj.phase !== "success" && (
-        <div className="mt-4">
-          <Progress phase={inj.phase} plan={inj.plan} />
-          {inj.phase === "error" && inj.error && (
-            <div className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">
-              {inj.error}
-              {inj.failedTxHash && (
-                <a href={explorerTxUrl(inj.failedTxHash)} target="_blank" rel="noreferrer" className="ml-1 underline">
-                  {shortHash(inj.failedTxHash)}
-                </a>
-              )}
-              <button onClick={inj.reset} className="ml-2 font-semibold underline">Dismiss</button>
-            </div>
-          )}
-        </div>
-      )}
-
       <Button size="lg" className="mt-4 w-full" disabled={cta.disabled} loading={inj.busy} onClick={cta.onClick}>
         <span className="truncate">{cta.label}</span>
       </Button>
+      </>
+      )}
 
       <CompletionModal
         receipt={inj.receipt}
