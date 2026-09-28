@@ -203,6 +203,7 @@ export const NEAR_TOKEN: TokenPreset = { id: WRAP_NEAR_CONTRACT_ID, symbol: "NEA
 
 export const COMMON_TOKENS: TokenPreset[] = [
   NEAR_TOKEN,
+  { id: "nearpool-553815.nearpaid.near", symbol: "NEARPOOL", decimals: 18 },
   { id: "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", symbol: "USDC", decimals: 6 },
   { id: "usdt.tether-token.near", symbol: "USDt", decimals: 6 },
   { id: "token.v2.ref-finance.near", symbol: "REF", decimals: 18 },
