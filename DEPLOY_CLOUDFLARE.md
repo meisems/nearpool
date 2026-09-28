@@ -54,6 +54,11 @@ npx wrangler d1 migrations apply nearpool-activity --remote
 
 ## 2. Deploy from your machine
 
+For an existing installation, apply pending D1 migrations before deploying:
+`npx wrangler d1 migrations apply nearpool-activity --remote`.
+Migration `0002_activity_kind.sql` adds support for permanent LP locks and
+preserves existing entries as liquidity additions.
+
 ```bash
 npm run cf:deploy           # wrangler deploy (runs `npm run build` first via [build])
 ```
@@ -186,7 +191,10 @@ curl -I https://<your-host>/sw.js                    # Cache-Control: no-cache
 ```
 
 Then connect a wallet, make a small injection, and it should appear in the
-landing-page feed within about 15 seconds.
+landing-page feed within about 15 seconds. Successful permanent liquidity
+locks also appear there and in the token page's Recent feed, labeled
+"Locked forever" with the LP shares and transaction link. Only locks published
+after this update are added automatically; historical locks are not backfilled.
 
 ## Notes
 

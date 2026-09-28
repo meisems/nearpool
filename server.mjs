@@ -13,6 +13,7 @@ const host = process.env.HOST || "0.0.0.0";
 const MAX_BODY_BYTES = 16_384;
 
 const REF_CONTRACT_ID = process.env.VITE_REF_CONTRACT_ID || "v2.ref-finance.near";
+const LP_LOCK_ACCOUNT_ID = "0".repeat(64);
 const RPC_URLS = [
   process.env.NEAR_RPC_URL || process.env.VITE_NEAR_RPC_URL || "https://rpc.mainnet.near.org",
   ...(process.env.NEAR_FALLBACK_RPC_URLS || process.env.VITE_NEAR_FALLBACK_RPC_URLS || "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com")
@@ -92,10 +93,10 @@ function statusFailed(status) {
 
 /**
  * Re-derive an activity post from chain data: the transaction must be a
- * fully successful add_liquidity on Ref Finance signed by `accountId`.
+ * fully successful addition or permanent LP transfer on Ref Finance signed by `accountId`.
  * Nothing displayed in the feed comes from the client.
  */
-async function verifyInjection(hash, accountId) {
+async function verifyActivity(hash, accountId) {
   const outcome = await rpcCall("tx", { tx_hash: hash, sender_account_id: accountId, wait_until: "FINAL" });
   const tx = outcome?.transaction;
   if (!tx || tx.signer_id !== accountId || tx.receiver_id !== REF_CONTRACT_ID) {
@@ -104,23 +105,31 @@ async function verifyInjection(hash, accountId) {
   if (statusFailed(outcome.status) || outcome.receipts_outcome.some((r) => statusFailed(r.outcome?.status))) {
     throw Object.assign(new Error("transaction did not fully succeed"), { status: 400 });
   }
-  const addLiquidity = [...(tx.actions || [])]
+  const call = [...(tx.actions || [])]
     .reverse()
     .map((action) => action?.FunctionCall)
-    .find((call) => call?.method_name === "add_liquidity");
-  if (!addLiquidity) throw Object.assign(new Error("transaction has no add_liquidity call"), { status: 400 });
-  const args = JSON.parse(Buffer.from(addLiquidity.args, "base64").toString("utf8"));
-  const poolId = Number(args.pool_id);
+    .find((call) => call?.method_name === "add_liquidity" || call?.method_name === "mft_transfer");
+  if (!call) throw Object.assign(new Error("transaction has no liquidity addition or lock call"), { status: 400 });
+  const args = JSON.parse(Buffer.from(call.args, "base64").toString("utf8"));
+  const kind = call.method_name === "mft_transfer" ? "lock" : "injection";
+  if (kind === "lock" && (
+    args.receiver_id !== LP_LOCK_ACCOUNT_ID ||
+    typeof args.token_id !== "string" || !/^:\d+$/.test(args.token_id) ||
+    typeof args.amount !== "string" || !/^\d+$/.test(args.amount) || BigInt(args.amount) <= 0n
+  )) throw Object.assign(new Error("not a permanent LP share lock"), { status: 400 });
+  const poolId = Number(kind === "lock" ? args.token_id.slice(1) : args.pool_id);
   if (!Number.isSafeInteger(poolId) || poolId < 0) throw Object.assign(new Error("invalid pool id"), { status: 400 });
 
   const pool = await viewCall(REF_CONTRACT_ID, "get_pool", { pool_id: poolId });
+  if (!pool) throw Object.assign(new Error("pool not found"), { status: 400 });
   const tokenIds = pool.token_account_ids;
-  let amounts = (args.amounts || []).map(String);
-  let shares = "0";
+  let amounts = kind === "lock" ? [] : (args.amounts || []).map(String);
+  let shares = kind === "lock" ? args.amount : "0";
 
   // Ref logs `Liquidity added ["<amount> <token>", ...], minted <shares> shares` with the
   // amounts it actually pulled; prefer those over the requested amounts.
   for (const receipt of outcome.receipts_outcome) {
+    if (kind === "lock") break;
     if (receipt.outcome.executor_id !== REF_CONTRACT_ID) continue;
     for (const log of receipt.outcome.logs) {
       const match = /^Liquidity added \[(.*)\], minted (\d+) shares/.exec(log);
@@ -131,7 +140,7 @@ async function verifyInjection(hash, accountId) {
       shares = match[2];
     }
   }
-  if (shares === "0" && outcome.status.SuccessValue) {
+  if (kind === "injection" && shares === "0" && outcome.status.SuccessValue) {
     try {
       const value = JSON.parse(Buffer.from(outcome.status.SuccessValue, "base64").toString("utf8"));
       if (/^\d+$/.test(String(value))) shares = String(value);
@@ -143,6 +152,7 @@ async function verifyInjection(hash, accountId) {
   const metas = await Promise.all(tokenIds.map((id) => ftMetadata(id).catch(() => null)));
   const block = await rpcCall("block", { block_id: outcome.transaction_outcome.block_hash });
   return {
+    kind,
     hash,
     accountId,
     poolId,
@@ -180,6 +190,11 @@ if (!turso) {
     block_height integer not null,
     timestamp integer not null
   )`);
+  // Upgrade existing Turso databases without losing previously published additions.
+  const columns = await turso.execute("pragma table_info(nearpool_activity)");
+  if (!columns.rows.some((column) => column.name === "kind")) {
+    await turso.execute("alter table nearpool_activity add column kind text not null default 'injection'");
+  }
 }
 
 async function upsertActivity(post) {
@@ -189,8 +204,8 @@ async function upsertActivity(post) {
     return;
   }
   await turso.execute({
-    sql: `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp)
-          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    sql: `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp, kind)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           on conflict(hash) do nothing`,
     args: [
       post.hash,
@@ -203,6 +218,7 @@ async function upsertActivity(post) {
       post.shares,
       post.blockHeight,
       post.timestamp,
+      post.kind,
     ],
   });
 }
@@ -211,6 +227,7 @@ async function listActivity(limit = 100) {
   if (!turso) return [...activityMemory.values()].sort((a, b) => b.blockHeight - a.blockHeight).slice(0, limit);
   const result = await turso.execute({ sql: "select * from nearpool_activity order by block_height desc limit ?", args: [limit] });
   return result.rows.map((row) => ({
+    kind: row.kind ?? "injection",
     hash: String(row.hash),
     accountId: String(row.account_id),
     poolId: Number(row.pool_id),
@@ -248,7 +265,7 @@ async function handleActivityPublish(req, res) {
   const accountId = isAccountId(body?.accountId) ? body.accountId : "";
   if (!hash || !accountId) return sendJson(res, 400, { error: "a transaction hash and NEAR account id are required" });
   try {
-    const post = await verifyInjection(hash, accountId);
+    const post = await verifyActivity(hash, accountId);
     await upsertActivity(post);
     return sendJson(res, 200, { ok: true, post });
   } catch (error) {

@@ -78,6 +78,7 @@ Ref Finance's own pool fees apply separately. Change the amount with `VITE_FEE_N
 npm install
 npm run dev        # http://localhost:3000
 npm test           # math + transaction-planner checks
+npm run test:activity # verified additions/locks + D1/Turso migration checks (Node 22+)
 npm run typecheck
 npm run build && npm start   # production server on :10000 (serves dist/ + /api/activity)
 ```
