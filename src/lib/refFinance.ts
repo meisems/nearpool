@@ -200,7 +200,7 @@ export function displaySymbol(tokenId: string, meta?: Pick<FtMetadata, "symbol">
 
 const POOL_PAGE_SIZE = 200;
 /** Pages fetched at once during a full scan (the pool RPC is the keyed proxy). */
-const POOL_SCAN_PARALLEL = 8;
+const POOL_SCAN_PARALLEL = 4;
 /** Look for newly created pools at most this often (cheap: count + new pages). */
 const NEW_POOLS_CHECK_MS = 60_000;
 /** Refresh every pool's reserves in the background at most this often. */
@@ -1550,6 +1550,7 @@ export function planCreatePool(native: NativeBalance, intent: CreatePoolIntent):
 /* ================================================================ errors */
 
 const REF_ERRORS: Array<[RegExp, string]> = [
+  [/Exceeded \d+ (providers|attempts)|RetriesExceeded|Too Many Requests/i, "NEAR's network is busy right now (rate limited). Wait a few seconds and try again."],
   [/E10|account not registered/i, "your account isn't registered on Ref Finance yet — retry and the storage step will register it"],
   [/E11|insufficient \$NEAR storage|ERR_STORAGE_DEPOSIT|storage deposit/i, "not enough storage deposit on Ref — retry to top it up"],
   [/E12|token not whitelisted/i, "this token isn't registered in your Ref account — retry to register it"],
