@@ -200,11 +200,14 @@ wNEAR. Fee: 0.1 NEAR per swap.
 Locking shows traders the liquidity can't be pulled. It is **permanent**:
 there is no unlock date and no way back.
 
-1. On the token page, with a position in the pool, click **Lock
-   liquidity**. Or, right after adding liquidity, click **Lock these shares
-   forever**.
-2. Pick how much: **25%**, **50%**, **100%** of your shares, or **Just
-   added**.
+1. Start from one of:
+   - **Lock after adding**: tick it in the Add liquidity panel before
+     adding. Once the deposit lands, the lock opens with exactly the LP
+     shares that deposit minted (measured on-chain).
+   - **Lock these shares forever** on the screen shown after adding.
+   - **Lock liquidity** on the token page, for any position you hold.
+2. Pick how much: **What you added** (exact shares from your last deposit),
+   or **25%**, **50%**, **100%** of your shares.
 3. Check what it's worth now and its share of the pool.
 4. Tick **I understand this can't be undone**, click **Lock forever** and
    approve.
@@ -217,6 +220,8 @@ How it works:
 - Trading fees earned by locked shares stay in the pool, locked with them.
 - The pool card shows **X% locked forever**. Anyone can verify it on-chain
   with Ref `get_pool_shares` for that account.
+- Confirmed locks are posted to **Recent** as **Locked forever**, after the
+  server verifies the transaction on-chain.
 - No nearpool fee. The first lock in a pool registers the lock account
   there (`mft_register`): 0.01 NEAR storage, unused part refunded.
 

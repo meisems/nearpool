@@ -232,11 +232,17 @@ export function useNearInjection() {
           .find((o) => (o.transaction as { receiver_id?: string } | undefined)?.receiver_id === REF_FINANCE_CONTRACT_ID);
         const minted = injectOutcome ? outcomeReturnValue<string>(injectOutcome) : null;
         const txHash = injectOutcome ? outcomeTxHash(injectOutcome) : null;
+        // Exact shares this batch added: the on-chain balance change. Falls back to
+        // add_liquidity's return value, then to the estimate.
+        const sharesAfter = await getPoolShares(pool.id, accountId).catch(() => null);
+        const returned = minted && /^\d+$/.test(minted) ? BigInt(minted) : null;
+        const sharesMinted =
+          sharesAfter !== null && sharesAfter > existingShares ? sharesAfter - existingShares : returned ?? nextPlan.expectedShares;
         const result: InjectionReceipt = {
           poolId: pool.id,
           tokenIds: pool.tokenIds,
           usedAmounts: nextPlan.usedAmounts,
-          sharesMinted: minted && /^\d+$/.test(minted) ? BigInt(minted) : nextPlan.expectedShares,
+          sharesMinted,
           txHash,
           txHashes: outcomes.map(outcomeTxHash),
           wrapped: nextPlan.wrapAmount,

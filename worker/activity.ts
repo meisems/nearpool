@@ -230,7 +230,45 @@ interface ActivityRow {
   timestamp: number;
 }
 
+/**
+ * Create/upgrade the table on first use, so the feed works even if the D1
+ * migrations (migrations/*.sql) were never applied to this database; in
+ * particular the `kind` column that lock posts need. Runs once per isolate.
+ */
+let schemaReady: Promise<void> | null = null;
+function ensureSchema(db: D1Database): Promise<void> {
+  schemaReady ??= (async () => {
+    await db
+      .prepare(
+        `create table if not exists nearpool_activity (
+          hash text primary key,
+          account_id text not null,
+          pool_id integer not null,
+          token_ids text not null,
+          symbols text not null,
+          decimals text not null,
+          amounts text not null,
+          shares text not null,
+          block_height integer not null,
+          timestamp integer not null,
+          kind text not null default 'injection'
+        )`,
+      )
+      .run();
+    await db.prepare("create index if not exists nearpool_activity_block_height on nearpool_activity (block_height desc)").run();
+    const { results } = await db.prepare("pragma table_info(nearpool_activity)").all<{ name: string }>();
+    if (!results.some((column) => column.name === "kind")) {
+      await db.prepare("alter table nearpool_activity add column kind text not null default 'injection'").run();
+    }
+  })().catch((error) => {
+    schemaReady = null; // try again on the next request
+    throw error;
+  });
+  return schemaReady;
+}
+
 async function listActivity(db: D1Database, limit = 100): Promise<ActivityPost[]> {
+  await ensureSchema(db);
   const { results } = await db
     .prepare("select * from nearpool_activity order by block_height desc limit ?")
     .bind(limit)
@@ -251,6 +289,7 @@ async function listActivity(db: D1Database, limit = 100): Promise<ActivityPost[]
 }
 
 async function insertActivity(db: D1Database, post: ActivityPost): Promise<void> {
+  await ensureSchema(db);
   await db
     .prepare(
       `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp, kind)
