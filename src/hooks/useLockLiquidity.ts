@@ -5,6 +5,7 @@ import { getNativeBalance, NearTransactionError, outcomeTxHash } from "../lib/ne
 import { explainNearError, getPoolShares, isLockAccountRegistered, planLockShares, type LockPlan } from "../lib/refFinance";
 import { executePlannedTransactions } from "./useNearInjection";
 import { REF_QUERY_ROOT } from "./useRefData";
+import { publishActivity } from "../lib/activity";
 
 export type LockPhase = "idle" | "checking" | "signing" | "success" | "error";
 
@@ -36,8 +37,14 @@ export function useLockLiquidity() {
         setPhase("signing");
         const outcomes = await executePlannedTransactions(signAndSendTransactions, accountId, next.transactions);
         const last = outcomes[outcomes.length - 1];
-        setTxHash(last ? outcomeTxHash(last) : null);
+        const hash = last ? outcomeTxHash(last) : null;
+        setTxHash(hash);
         setPhase("success");
+        if (hash) {
+          void publishActivity(hash, accountId).then(() =>
+            queryClient.invalidateQueries({ queryKey: ["activity-feed"] }),
+          );
+        }
         return true;
       } catch (e) {
         const { message } = explainNearError(e);

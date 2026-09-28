@@ -4,7 +4,7 @@ import { explorerTxUrl, WRAP_NEAR_CONTRACT_ID } from "../config/near";
 import { fetchActivity, type ActivityPost } from "../lib/activity";
 import { fmtAmount, shortAccount } from "../lib/format";
 import { TokenAvatar } from "./TokenAvatar";
-import { IconExternal } from "./icons";
+import { IconExternal, IconLock } from "./icons";
 
 function ago(ms: number): string {
   const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -29,8 +29,13 @@ function Row({ post }: { post: ActivityPost }) {
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium text-ink">{post.symbols.join(" / ")}</span>
+          <span className={`flex items-center gap-1 text-xs ${post.kind === "lock" ? "text-accent" : "text-faint"}`}>
+            {post.kind === "lock" ? <><IconLock size={12} /> Locked forever</> : "Liquidity added"}
+          </span>
           <span className="block truncate text-xs text-faint tabular">
-            {post.amounts.map((a, i) => `${fmtAmount(BigInt(a), post.decimals[i] ?? 24)} ${post.symbols[i] ?? ""}`).join(" + ")}
+            {post.kind === "lock"
+              ? `${fmtAmount(BigInt(post.shares), 24)} LP shares · Pool #${post.poolId}`
+              : post.amounts.map((a, i) => `${fmtAmount(BigInt(a), post.decimals[i] ?? 24)} ${post.symbols[i] ?? ""}`).join(" + ")}
           </span>
         </span>
       </Link>
@@ -48,7 +53,7 @@ function Row({ post }: { post: ActivityPost }) {
   );
 }
 
-/** Recent verified injections, optionally for one token only. */
+/** Recent verified liquidity additions and locks, optionally for one token only. */
 export function ActivityList({ tokenId, limit = 6 }: { tokenId?: string; limit?: number }) {
   const { data = [], isLoading } = useActivity();
   const rows = (tokenId ? data.filter((p) => p.tokenIds.includes(tokenId)) : data).slice(0, limit);

@@ -24,7 +24,7 @@ import {
   type RefPool,
   type SwapRoute,
 } from "../lib/refFinance";
-import { publishInjection } from "../lib/activity";
+import { publishActivity } from "../lib/activity";
 import { REF_QUERY_ROOT } from "./useRefData";
 import type { DclPool } from "../lib/dcl";
 
@@ -243,7 +243,11 @@ export function useNearInjection() {
         };
         setReceipt(result);
         setPhase("success");
-        if (txHash) void publishInjection(txHash, accountId);
+        if (txHash) {
+          void publishActivity(txHash, accountId).then(() =>
+            queryClient.invalidateQueries({ queryKey: ["activity-feed"] }),
+          );
+        }
         void queryClient.invalidateQueries({ queryKey: [REF_QUERY_ROOT] });
         return result;
       } catch (e) {

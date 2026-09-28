@@ -369,7 +369,7 @@ const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode
     title: "Privacy",
     sections: [
       ["What's read", <p key="w">Your public account ID and balances, from public NEAR RPC. No keys, no seed phrases.</p>],
-      ["What's stored", <p key="s">Theme, wallet session and tracked tokens — in your browser. Confirmed injections appear in the public activity feed by account ID and transaction hash.</p>],
+      ["What's stored", <p key="s">Theme, wallet session and tracked tokens — in your browser. Confirmed liquidity additions and locks appear in the public activity feed by account ID and transaction hash.</p>],
     ],
   },
 };

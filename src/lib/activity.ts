@@ -1,20 +1,22 @@
 /**
- * Shared, cross-browser feed of confirmed liquidity injections.
+ * Shared, cross-browser feed of confirmed liquidity additions and locks.
  *
  * The client only submits `{ hash, accountId }`. The server re-reads the
- * transaction from NEAR RPC, checks it's a successful `add_liquidity` on Ref
+ * transaction from NEAR RPC, checks it's a successful addition or LP lock on Ref
  * Finance signed by that account, and derives every displayed field from
  * chain data — the client can't forge amounts or tokens.
  */
 
 export interface ActivityPost {
+  /** Older stored/cached posts without a kind are liquidity additions. */
+  kind?: "injection" | "lock";
   hash: string;
   accountId: string;
   poolId: number;
   tokenIds: string[];
   symbols: string[];
   decimals: number[];
-  /** Raw amounts added, pool token order. */
+  /** Raw amounts added, pool token order; empty for LP locks. */
   amounts: string[];
   shares: string;
   blockHeight: number;
@@ -46,8 +48,8 @@ export async function fetchActivity(signal?: AbortSignal): Promise<ActivityPost[
   return Array.isArray(body.posts) ? body.posts.filter(isActivityPost) : [];
 }
 
-/** Best-effort publish; a feed outage never turns a confirmed injection into a failure. */
-export async function publishInjection(hash: string, accountId: string): Promise<void> {
+/** Best-effort publish; a feed outage never turns a confirmed transaction into a failure. */
+export async function publishActivity(hash: string, accountId: string): Promise<void> {
   const body = JSON.stringify({ hash, accountId });
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
@@ -65,5 +67,5 @@ export async function publishInjection(hash: string, accountId: string): Promise
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1_000 * (attempt + 1)));
   }
-  console.warn("shared activity feed unavailable; injection is still confirmed on-chain", hash);
+  console.warn("shared activity feed unavailable; transaction is still confirmed on-chain", hash);
 }

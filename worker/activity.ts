@@ -1,9 +1,9 @@
 /**
  * Shared activity feed for Cloudflare (Workers and Pages Functions).
  *
- * Port of the feed in server.mjs: a published injection is only listed
+ * Port of the feed in server.mjs: published liquidity activity is only listed
  * after re-reading the transaction from NEAR RPC and confirming it is a
- * fully successful `add_liquidity` on Ref Finance signed by the claimed
+ * fully successful `add_liquidity` or permanent LP `mft_transfer` on Ref Finance signed by the claimed
  * account. Every displayed field is derived from chain data.
  *
  * Storage is a D1 database bound as `DB` (see migrations/). Without the
@@ -20,6 +20,7 @@ export interface Env {
 }
 
 export interface ActivityPost {
+  kind: "injection" | "lock";
   hash: string;
   accountId: string;
   poolId: number;
@@ -37,6 +38,7 @@ const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://near.lava.build
 const MAX_BODY_BYTES = 16_384;
 const BASE58_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 const ACCOUNT_ID = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+const LP_LOCK_ACCOUNT_ID = "0".repeat(64);
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -136,7 +138,7 @@ interface TxOutcome {
 
 const statusFailed = (status: Status) => !status || typeof status !== "object" || "Failure" in status;
 
-async function verifyInjection(env: Env, hash: string, accountId: string): Promise<ActivityPost> {
+async function verifyActivity(env: Env, hash: string, accountId: string): Promise<ActivityPost> {
   const ref = env.REF_CONTRACT_ID || "v2.ref-finance.near";
   const outcome = await rpcCall<TxOutcome>(env, "tx", { tx_hash: hash, sender_account_id: accountId, wait_until: "FINAL" });
   const tx = outcome?.transaction;
@@ -146,24 +148,33 @@ async function verifyInjection(env: Env, hash: string, accountId: string): Promi
   if (statusFailed(outcome.status) || outcome.receipts_outcome.some((r) => statusFailed(r.outcome.status))) {
     throw new HttpError(400, "transaction did not fully succeed");
   }
-  const addLiquidity = [...tx.actions]
+  const call = [...tx.actions]
     .reverse()
     .map((action) => (typeof action === "object" ? action.FunctionCall : undefined))
-    .find((call) => call?.method_name === "add_liquidity");
-  if (!addLiquidity) throw new HttpError(400, "transaction has no add_liquidity call");
-  const args = JSON.parse(fromBase64(addLiquidity.args)) as { pool_id: unknown; amounts?: unknown[] };
-  const poolId = Number(args.pool_id);
+    .find((call) => call?.method_name === "add_liquidity" || call?.method_name === "mft_transfer");
+  if (!call) throw new HttpError(400, "transaction has no liquidity addition or lock call");
+  const args = JSON.parse(fromBase64(call.args)) as {
+    pool_id?: unknown; amounts?: unknown[]; token_id?: unknown; receiver_id?: unknown; amount?: unknown;
+  };
+  const kind = call.method_name === "mft_transfer" ? "lock" : "injection";
+  if (kind === "lock" && (
+    args.receiver_id !== LP_LOCK_ACCOUNT_ID ||
+    typeof args.token_id !== "string" || !/^:\d+$/.test(args.token_id) ||
+    typeof args.amount !== "string" || !/^\d+$/.test(args.amount) || BigInt(args.amount) <= 0n
+  )) throw new HttpError(400, "not a permanent LP share lock");
+  const poolId = Number(kind === "lock" ? (args.token_id as string).slice(1) : args.pool_id);
   if (!Number.isSafeInteger(poolId) || poolId < 0) throw new HttpError(400, "invalid pool id");
 
   const pool = await viewCall<{ token_account_ids: string[] }>(env, ref, "get_pool", { pool_id: poolId });
   if (!pool) throw new HttpError(400, "pool not found");
   const tokenIds = pool.token_account_ids;
-  let amounts = (args.amounts ?? []).map(String);
-  let shares = "0";
+  let amounts = kind === "lock" ? [] : (args.amounts ?? []).map(String);
+  let shares = kind === "lock" ? args.amount as string : "0";
 
   // Ref logs `Liquidity added ["<amount> <token>", ...], minted <shares> shares`
   // with the amounts it actually pulled; prefer those over the requested ones.
   for (const receipt of outcome.receipts_outcome) {
+    if (kind === "lock") break;
     if (receipt.outcome.executor_id !== ref) continue;
     for (const log of receipt.outcome.logs) {
       const match = /^Liquidity added \[(.*)\], minted (\d+) shares/.exec(log);
@@ -173,7 +184,7 @@ async function verifyInjection(env: Env, hash: string, accountId: string): Promi
       shares = match[2];
     }
   }
-  if (shares === "0" && typeof outcome.status === "object" && outcome.status.SuccessValue) {
+  if (kind === "injection" && shares === "0" && typeof outcome.status === "object" && outcome.status.SuccessValue) {
     try {
       const value = JSON.parse(fromBase64(outcome.status.SuccessValue));
       if (/^\d+$/.test(String(value))) shares = String(value);
@@ -189,6 +200,7 @@ async function verifyInjection(env: Env, hash: string, accountId: string): Promi
     block_id: outcome.transaction_outcome.block_hash,
   });
   return {
+    kind,
     hash,
     accountId,
     poolId,
@@ -205,6 +217,7 @@ async function verifyInjection(env: Env, hash: string, accountId: string): Promi
 /* ------------------------------------------------------------ storage (D1) */
 
 interface ActivityRow {
+  kind?: ActivityPost["kind"];
   hash: string;
   account_id: string;
   pool_id: number;
@@ -223,6 +236,7 @@ async function listActivity(db: D1Database, limit = 100): Promise<ActivityPost[]
     .bind(limit)
     .all<ActivityRow>();
   return results.map((row) => ({
+    kind: row.kind ?? "injection",
     hash: row.hash,
     accountId: row.account_id,
     poolId: Number(row.pool_id),
@@ -239,8 +253,8 @@ async function listActivity(db: D1Database, limit = 100): Promise<ActivityPost[]
 async function insertActivity(db: D1Database, post: ActivityPost): Promise<void> {
   await db
     .prepare(
-      `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `insert into nearpool_activity (hash, account_id, pool_id, token_ids, symbols, decimals, amounts, shares, block_height, timestamp, kind)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        on conflict(hash) do nothing`,
     )
     .bind(
@@ -254,6 +268,7 @@ async function insertActivity(db: D1Database, post: ActivityPost): Promise<void>
       post.shares,
       post.blockHeight,
       post.timestamp,
+      post.kind,
     )
     .run();
 }
@@ -298,7 +313,7 @@ export async function handleActivityRequest(request: Request, env: Env): Promise
       const hash = typeof body?.hash === "string" && BASE58_HASH.test(body.hash) ? body.hash : "";
       const accountId = isAccountId(body?.accountId) ? body.accountId : "";
       if (!hash || !accountId) return json(400, { error: "a transaction hash and NEAR account id are required" });
-      const post = await verifyInjection(env, hash, accountId);
+      const post = await verifyActivity(env, hash, accountId);
       await insertActivity(env.DB, post);
       return json(200, { ok: true, post });
     } catch (error) {
