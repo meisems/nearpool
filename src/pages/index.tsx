@@ -227,8 +227,17 @@ export function TokenPage() {
               </div>
             ) : m.pool && poolHoldsToken ? (
               <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
-                <Stat label="Price" value={`${fmtPrice(m.price)} ${m.counterSymbol}`} sub={`per ${symbol}`} />
-                <Stat label="Liquidity" value={`${fmtAmount(m.counterReserve, m.counterDecimals)} ${m.counterSymbol}`} sub={`${fmtAmount(m.tokenReserve, m.decimals)} ${symbol}`} />
+                {m.pool.sharesTotalSupply === 0n ? (
+                  <>
+                    <Stat label="Price" value="Not set" sub="set by the first deposit" />
+                    <Stat label="Liquidity" value="Empty" sub="no deposits yet" />
+                  </>
+                ) : (
+                  <>
+                    <Stat label="Price" value={`${fmtPrice(m.price)} ${m.counterSymbol}`} sub={`per ${symbol}`} />
+                    <Stat label="Liquidity" value={`${fmtAmount(m.counterReserve, m.counterDecimals)} ${m.counterSymbol}`} sub={`${fmtAmount(m.tokenReserve, m.decimals)} ${symbol}`} />
+                  </>
+                )}
                 <Stat
                   label="Pool"
                   value={
