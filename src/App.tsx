@@ -21,13 +21,14 @@ const queryClient = new QueryClient({
 
 function Footer() {
   return (
-    <footer className="mt-16 border-t border-linesoft py-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-faint">
-        <span className="flex items-center gap-2 text-muted">
+    // Bottom padding on mobile keeps the footer clear of the fixed tab bar.
+    <footer className="border-t border-linesoft pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <div className="mx-auto flex max-w-6xl flex-col items-center gap-3 px-4 py-6 text-sm sm:flex-row sm:justify-between sm:px-6">
+        <Link to="/" className="flex items-center gap-2 text-muted hover:text-ink">
           <Logo size={20} />
-          nearpool
-        </span>
-        <nav className="flex flex-wrap gap-x-5 gap-y-2" aria-label="Footer">
+          <span className="font-display font-semibold tracking-tight">nearpool</span>
+        </Link>
+        <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-faint" aria-label="Footer">
           <Link to="/docs" className="hover:text-ink">Docs</Link>
           <Link to="/terms" className="hover:text-ink">Terms</Link>
           <Link to="/privacy-policy" className="hover:text-ink">Privacy</Link>
@@ -71,11 +72,12 @@ function Shell() {
   const { pathname } = useLocation();
   const [splash, setSplash] = useState(shouldShowSplash);
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    // Column layout: the footer always sits at the bottom, even on short pages.
+    <div className="flex min-h-dvh flex-col bg-canvas text-ink">
       {splash && <SplashScreen onDone={() => setSplash(false)} />}
       <ScrollToTop />
       <Navbar />
-      <main className="mx-auto max-w-6xl px-4 pt-6 pb-24 sm:px-6 sm:pt-10 md:pb-10">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-6 pb-12 sm:px-6 sm:pt-10">
         <RouteErrorBoundary key={pathname}>
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -94,8 +96,8 @@ function Shell() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </RouteErrorBoundary>
-        <Footer />
       </main>
+      <Footer />
     </div>
   );
 }
