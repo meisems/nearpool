@@ -61,7 +61,13 @@ export const EXPLORER_URL: string = (env.VITE_EXPLORER_URL || "https://nearblock
 
 export const explorerTxUrl = (txHash: string) => `${EXPLORER_URL}/txns/${txHash}`;
 export const explorerAccountUrl = (accountId: string) => `${EXPLORER_URL}/address/${accountId}`;
-export const refPoolUrl = (poolId: number) => `https://app.ref.finance/pool/${poolId}`;
+/**
+ * Rhea (formerly Ref Finance) pool page. Link straight to the pool: Rhea's
+ * pool list hides low-liquidity pools and unlisted tokens, so a new pool
+ * won't show up by searching there.
+ */
+export const RHEA_APP_URL = "https://app.rhea.finance";
+export const refPoolUrl = (poolId: number) => `${RHEA_APP_URL}/pool/${poolId}`;
 
 /* ------------------------------------------------------------ units */
 

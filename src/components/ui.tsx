@@ -4,8 +4,12 @@ import { IconCheck, IconCopy, IconLoader } from "./icons";
 /* Shared building blocks for the nearpool UI: flat surfaces with hairline
    borders, one radius scale, and a single primary action colour. */
 
-export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <section className={`rounded-2xl border border-line bg-card ${className}`}>{children}</section>;
+export function Card({ className = "", children, id }: { className?: string; children: ReactNode; id?: string }) {
+  return (
+    <section id={id} className={`rounded-2xl border border-line bg-card ${className}`}>
+      {children}
+    </section>
+  );
 }
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";

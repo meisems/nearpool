@@ -208,6 +208,7 @@ test("paste parser: addresses, pool ids and links", () => {
   assert.deepEqual(parseTokenInput("https://nearblocks.io/token/usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
   assert.deepEqual(parseTokenInput("https://nearblocks.io/address/blackdragon.tkn.near?tab=tokens"), { kind: "token", tokenId: "blackdragon.tkn.near" });
   assert.deepEqual(parseTokenInput("https://app.ref.finance/pool/1910"), { kind: "pool", poolId: 1910 });
+  assert.deepEqual(parseTokenInput("https://app.rhea.finance/pool/8728"), { kind: "pool", poolId: 8728 });
   assert.deepEqual(parseTokenInput("https://app.ref.finance/#near|usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
   assert.deepEqual(parseTokenInput("https://app.ref.finance/?tokenIn=near&tokenOut=usdt.tether-token.near"), { kind: "token", tokenId: "usdt.tether-token.near" });
   assert.deepEqual(parseTokenInput("not a token!"), { kind: "invalid" });

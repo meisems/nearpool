@@ -1,6 +1,6 @@
 # nearpool
 
-Non-custodial liquidity injector for [Ref Finance](https://app.ref.finance) on NEAR mainnet.
+Non-custodial liquidity injector for [Ref Finance / Rhea](https://app.rhea.finance) on NEAR mainnet.
 Paste any token's contract address (or a nearblocks / Ref link, or a pool ID), pick its pool,
 type one side, and nearpool sizes the other side from live reserves, then batches every step
 into a single wallet approval:
@@ -26,6 +26,8 @@ pool depth and your position. Swaps route directly or through one intermediate t
 NEAR → USDC → token) using Ref's multi-step instant swap.
 
 Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`, `/swap?out=<token>`.
+
+**Step-by-step user guide:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md) (also on the site at `/docs`).
 
 ## Fees
 
