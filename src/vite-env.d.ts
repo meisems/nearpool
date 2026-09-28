@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_NEAR_RPC_URL?: string;
   /** Comma-separated fallback RPC endpoints, tried in order. */
   readonly VITE_NEAR_FALLBACK_RPC_URLS?: string;
+  readonly VITE_POOL_RPC_URL?: string;
   readonly VITE_REF_CONTRACT_ID?: string;
   readonly VITE_WRAP_NEAR_CONTRACT_ID?: string;
   readonly VITE_EXPLORER_URL?: string;

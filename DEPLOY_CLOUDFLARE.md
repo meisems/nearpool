@@ -110,8 +110,9 @@ file.
 
 | Variable | Default |
 | --- | --- |
-| `VITE_NEAR_RPC_URL` | `/api/rpc` in `wrangler.toml` (the Worker's proxy); `https://rpc.mainnet.near.org` if unset |
-| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
+| `VITE_NEAR_RPC_URL` | `https://free.rpc.fastnear.com` in `wrangler.toml`: public RPC for token info, balances and the wallet |
+| `VITE_POOL_RPC_URL` | `/api/rpc` in `wrangler.toml`: Ref Finance reads (pools, swaps) go through the Worker proxy and your `NEAR_RPC_URL` secret |
+| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://near.lava.build,https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
@@ -146,8 +147,9 @@ your provider:
 2. Store it as a secret: `npx wrangler secret put NEAR_RPC_URL` and paste
    the URL (or the Worker's **Settings → Variables and Secrets → Add**, type
    **Secret**).
-3. `VITE_NEAR_RPC_URL = "/api/rpc"` is already set in `wrangler.toml`, so
-   the site sends its RPC calls to the proxy. Redeploy after adding the
+3. `VITE_POOL_RPC_URL = "/api/rpc"` is already set in `wrangler.toml`, so
+   pool and swap reads go through the proxy (and your key) while everything
+   else uses the public `VITE_NEAR_RPC_URL`. Redeploy after adding the
    secret. Without the secret, the proxy uses the public endpoints.
 
 Check it: `curl -X POST https://<your-host>/api/rpc -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"status","params":[]}'`

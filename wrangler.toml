@@ -32,7 +32,9 @@ migrations_dir = "migrations"
 # public: never put an API key here. Changing one needs a redeploy (rebuild).
 # A variable of the same name set in the shell or in Workers Builds settings
 # overrides the value here.
-VITE_NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com"
+VITE_NEAR_RPC_URL = "https://free.rpc.fastnear.com" # public RPC: token info, balances, wallet
+VITE_POOL_RPC_URL = "/api/rpc" # pools and swaps: the Worker proxy, which uses the NEAR_RPC_URL secret (Lava)
+VITE_NEAR_FALLBACK_RPC_URLS = "https://near.lava.build,https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org"
 VITE_REF_CONTRACT_ID = "v2.ref-finance.near"
 VITE_WRAP_NEAR_CONTRACT_ID = "wrap.near"
 VITE_EXPLORER_URL = "https://nearblocks.io"
