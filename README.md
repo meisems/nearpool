@@ -71,6 +71,7 @@ For Cloudflare builds the `VITE_*` values are set in `wrangler.toml` `[vars]` (r
 | Variable | Default |
 | --- | --- |
 | `VITE_NEAR_RPC_URL` | `https://rpc.mainnet.near.org`. Use `/api/rpc` with a keyed provider (see DEPLOY_CLOUDFLARE.md) |
+| `VITE_POOL_RPC_URL` | unset (same as above). `/api/rpc` sends Ref pool and swap reads through the keyed proxy |
 | `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |

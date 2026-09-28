@@ -1,15 +1,23 @@
 import * as providers from "near-api-js/lib/providers";
 import type { FinalExecutionOutcome } from "@near-wallet-selector/core";
-import { RPC_URLS, STORAGE_PRICE_PER_BYTE } from "../config/near";
+import { POOL_RPC_URLS, REF_FINANCE_CONTRACT_ID, RPC_URLS, STORAGE_PRICE_PER_BYTE } from "../config/near";
 
 /**
  * Read-only access to NEAR mainnet. Requests go to the primary RPC first and
  * fail over, in order, to the configured fallbacks when an endpoint is down
  * or rate limiting.
  */
-export const rpcProvider = new providers.FailoverRpcProvider(
-  RPC_URLS.map((url) => new providers.JsonRpcProvider({ url }, { retries: 2, backoff: 1.5, wait: 250 })),
-);
+function failover(urls: string[]) {
+  return new providers.FailoverRpcProvider(
+    urls.map((url) => new providers.JsonRpcProvider({ url }, { retries: 2, backoff: 1.5, wait: 250 })),
+  );
+}
+
+/** Public RPC: token metadata, balances, accounts, transaction status. */
+export const rpcProvider = failover(RPC_URLS);
+
+/** Ref Finance reads (pools, deposits, shares, swap quotes): the keyed RPC via /api/rpc when configured. */
+export const poolRpcProvider = POOL_RPC_URLS[0] === RPC_URLS[0] ? rpcProvider : failover(POOL_RPC_URLS);
 
 export type ViewArgs = Record<string, unknown>;
 
@@ -19,7 +27,8 @@ export type ViewArgs = Record<string, unknown>;
  * `storage_balance_of`) are returned as `null`, not coerced.
  */
 export async function viewMethod<T>(contractId: string, methodName: string, args: ViewArgs = {}): Promise<T> {
-  const result = await rpcProvider.callFunction<Exclude<T, undefined> & object>(contractId, methodName, args);
+  const provider = contractId === REF_FINANCE_CONTRACT_ID ? poolRpcProvider : rpcProvider;
+  const result = await provider.callFunction<Exclude<T, undefined> & object>(contractId, methodName, args);
   return (result === undefined ? null : result) as T;
 }
 
