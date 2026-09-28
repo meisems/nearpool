@@ -1,6 +1,6 @@
 import * as providers from "near-api-js/lib/providers";
 import type { FinalExecutionOutcome } from "@near-wallet-selector/core";
-import { POOL_RPC_URLS, REF_FINANCE_CONTRACT_ID, RPC_URLS, STORAGE_PRICE_PER_BYTE } from "../config/near";
+import { DCL_CONTRACT_ID, POOL_RPC_URLS, REF_FINANCE_CONTRACT_ID, RPC_URLS, STORAGE_PRICE_PER_BYTE } from "../config/near";
 
 /**
  * Read-only access to NEAR mainnet. Requests go to the primary RPC first and
@@ -16,7 +16,7 @@ function failover(urls: string[]) {
 /** Public RPC: token metadata, balances, accounts, transaction status. */
 export const rpcProvider = failover(RPC_URLS);
 
-/** Ref Finance reads (pools, deposits, shares, swap quotes): the keyed RPC via /api/rpc when configured. */
+/** Ref Finance and Rhea DCL reads (pools, deposits, shares, quotes): the keyed RPC via /api/rpc when configured. */
 export const poolRpcProvider = POOL_RPC_URLS[0] === RPC_URLS[0] ? rpcProvider : failover(POOL_RPC_URLS);
 
 export type ViewArgs = Record<string, unknown>;
@@ -27,7 +27,7 @@ export type ViewArgs = Record<string, unknown>;
  * `storage_balance_of`) are returned as `null`, not coerced.
  */
 export async function viewMethod<T>(contractId: string, methodName: string, args: ViewArgs = {}): Promise<T> {
-  const provider = contractId === REF_FINANCE_CONTRACT_ID ? poolRpcProvider : rpcProvider;
+  const provider = contractId === REF_FINANCE_CONTRACT_ID || contractId === DCL_CONTRACT_ID ? poolRpcProvider : rpcProvider;
   const result = await provider.callFunction<Exclude<T, undefined> & object>(contractId, methodName, args);
   return (result === undefined ? null : result) as T;
 }

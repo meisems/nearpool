@@ -29,6 +29,7 @@ import {
   WRAP_NEAR_CONTRACT_ID,
 } from "../config/near";
 import { getNativeBalance, rpcProvider, viewMethod, type NativeBalance } from "./near";
+import { bestDclQuote, dclQuote, dclSwapArgs, type DclPool } from "./dcl";
 import { fmtAmount } from "./format";
 import {
   applySlippage,
@@ -918,6 +919,8 @@ export interface ZapQuote {
   amounts: bigint[];
   /** Target pool reserves after the swaps (a route may pass through it). */
   reserves: bigint[];
+  /** Set when the non-NEAR side is bought from a Rhea DCL pool instead of a Ref route. */
+  dcl?: { side: number; poolId: string; fee: number };
 }
 
 /**
@@ -1068,6 +1071,229 @@ export function planZapInjection(snapshot: AccountSnapshot, intent: ZapIntent): 
     fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
     zap: quote,
+  };
+}
+
+/* ---------------------------------------------------------------- NEAR only via Rhea DCL */
+
+/**
+ * Split for a NEAR-only deposit into a NEAR/token Ref pool when the token is
+ * bought from a Rhea DCL pool (e.g. NearPaid coins). An empty target pool
+ * gets half the NEAR spent, which sets its price at the DCL market rate;
+ * otherwise the spend is sized from a first quote so the amounts match the
+ * pool's ratio, then quoted exactly.
+ */
+export async function quoteZapViaDcl(pool: RefPool, nearIn: bigint, dclPools: DclPool[]): Promise<ZapQuote | null> {
+  const nearSide = pool.tokenIds.indexOf(WRAP_NEAR_CONTRACT_ID);
+  if (pool.tokenIds.length !== 2 || nearSide < 0 || nearIn <= 1n || dclPools.length === 0) return null;
+  const side = nearSide === 0 ? 1 : 0;
+  const token = pool.tokenIds[side];
+  const half = nearIn / 2n;
+  const probe = await bestDclQuote(dclPools, WRAP_NEAR_CONTRACT_ID, token, half);
+  if (!probe) return null;
+  let spend = half;
+  let out = probe.out;
+  const empty = pool.sharesTotalSupply === 0n || pool.reserves.some((r) => r === 0n);
+  if (!empty) {
+    // out(s) ≈ s·out0/s0; want out(s)/(nearIn − s) = rToken/rNear.
+    const rNear = pool.reserves[nearSide];
+    const rToken = pool.reserves[side];
+    spend = (nearIn * rToken * half) / (probe.out * rNear + rToken * half);
+    if (spend <= 0n || spend >= nearIn) return null;
+    out = await dclQuote(probe.pool.id, WRAP_NEAR_CONTRACT_ID, token, spend);
+    if (out <= 0n) return null;
+  }
+  const spendBySide = [0n, 0n];
+  spendBySide[side] = spend;
+  spendBySide[nearSide] = nearIn - spend;
+  const amounts = [0n, 0n];
+  amounts[side] = out;
+  amounts[nearSide] = nearIn - spend;
+  return {
+    nearIn,
+    spend: spendBySide,
+    routes: [null, null],
+    amounts,
+    reserves: [...pool.reserves],
+    dcl: { side, poolId: probe.pool.id, fee: probe.pool.fee },
+  };
+}
+
+/**
+ * NEAR-only deposit buying the token from a Rhea DCL pool:
+ * register (Ref account; wallet and Ref on the token) → wrap → DCL swap
+ * (token lands in the wallet) → deposit wNEAR and the token into Ref →
+ * `add_liquidity`. The token side uses the swap's minimum output; anything
+ * above it stays in the wallet. If the swap misses its minimum, the later
+ * token deposit and `add_liquidity` fail and the wNEAR stays deposited in
+ * your Ref balance (withdrawable).
+ */
+export function planZapViaDcl(snapshot: AccountSnapshot, intent: ZapIntent): InjectionPlan {
+  const { pool, quote, slippageBps, existingShares, fee } = intent;
+  const dcl = quote.dcl;
+  if (!dcl) throw new Error("not a DCL quote");
+  const accountId = snapshot.accountId;
+  if (pool.kind !== SIMPLE_POOL) {
+    throw new PlanError("unsupported-pool", `pool #${pool.id} is a ${pool.kind.toLowerCase().replace(/_/g, " ")}; only simple pools are supported`);
+  }
+  const side = dcl.side;
+  const nearSide = side === 0 ? 1 : 0;
+  const state = (id: string) => {
+    const t = snapshot.tokens[id];
+    if (!t) throw new Error(`missing account state for ${id}`);
+    return t;
+  };
+  const wnear = state(WRAP_NEAR_CONTRACT_ID);
+  const token = state(pool.tokenIds[side]);
+  const sym = displaySymbol(token.tokenId, token.metadata);
+
+  const minOut = applySlippage(quote.amounts[side], slippageBps);
+  const amounts = [0n, 0n];
+  amounts[side] = minOut;
+  amounts[nearSide] = quote.spend[nearSide];
+  if (amounts.some((a) => a <= 0n)) throw new PlanError("zero-amount", "amount too small");
+  const estimate = estimateAddLiquidity(amounts, pool.reserves, pool.sharesTotalSupply);
+  if (estimate.shares <= 0n) throw new PlanError("no-liquidity", "amount is too small to mint any LP shares");
+  const minAmounts = estimate.initializesPool ? [...amounts] : minAmountsFor(estimate.usedAmounts, slippageBps);
+
+  const refCalls = refAccountCalls(snapshot, [wnear, token].filter((t) => !t.registeredOnRefAccount));
+  // The wallet receives the bought token; Ref receives it as a deposit.
+  const tokenPrep = tokenStorageCalls(token, accountId, { user: true, ref: true });
+
+  const wrapCalls: PlannedCall[] = [];
+  const wrap = maxBig(quote.nearIn - wnear.walletBalance, 0n);
+  wrapCalls.push(...tokenStorageCalls(wnear, accountId, { user: wrap > 0n, ref: true }));
+  if (wrap > 0n) {
+    wrapCalls.push({
+      step: "wrap",
+      receiverId: WRAP_NEAR_CONTRACT_ID,
+      methodName: "near_deposit",
+      args: {},
+      gas: GAS.NEAR_DEPOSIT,
+      deposit: wrap,
+      label: `wrap ${fmtAmount(wrap, NEAR_DECIMALS)} NEAR → wNEAR`,
+    });
+  }
+  const swapCall: PlannedCall = {
+    step: "swap",
+    receiverId: WRAP_NEAR_CONTRACT_ID,
+    methodName: "ft_transfer_call",
+    args: dclSwapArgs(dcl.poolId, token.tokenId, quote.spend[side], minOut),
+    gas: GAS.DCL_SWAP,
+    deposit: ONE_YOCTO,
+    label: `buy ${sym} with ${fmtAmount(quote.spend[side], NEAR_DECIMALS)} NEAR on Rhea (${dcl.fee / 10_000}% pool) · min ${fmtAmount(minOut, token.metadata.decimals)} ${sym}`,
+  };
+  const deposit = (t: TokenAccountState, amount: bigint): PlannedCall => ({
+    step: "deposit",
+    receiverId: t.tokenId,
+    methodName: "ft_transfer_call",
+    args: { receiver_id: REF_FINANCE_CONTRACT_ID, amount: amount.toString(), msg: "" },
+    gas: GAS.FT_TRANSFER_CALL,
+    deposit: ONE_YOCTO,
+    label: `deposit ${fmtAmount(amount, t.metadata.decimals)} ${displaySymbol(t.tokenId, t.metadata)} into Ref`,
+  });
+  const lpDeposit = existingShares > 0n ? ONE_YOCTO : LP_STORAGE_DEPOSIT;
+  const injectCall: PlannedCall = {
+    step: "inject",
+    receiverId: REF_FINANCE_CONTRACT_ID,
+    methodName: "add_liquidity",
+    args: { pool_id: pool.id, amounts: amounts.map(String), min_amounts: minAmounts.map(String) },
+    gas: GAS.ADD_LIQUIDITY,
+    deposit: lpDeposit,
+    label: `add liquidity to pool #${pool.id}${existingShares > 0n ? "" : ` · ${fmtNear(lpDeposit)} LP storage, unused part refunded`}`,
+  };
+
+  const calls = [
+    ...refCalls,
+    ...tokenPrep,
+    ...wrapCalls,
+    swapCall,
+    deposit(wnear, amounts[nearSide]),
+    deposit(token, minOut),
+    injectCall,
+    ...(fee ? [feeCall(fee)] : []),
+  ];
+  assertNativeBudget(snapshot, calls);
+  const walletDeposits = [0n, 0n];
+  walletDeposits[nearSide] = amounts[nearSide];
+  walletDeposits[side] = minOut;
+  return {
+    calls,
+    transactions: groupCalls(calls),
+    usedAmounts: estimate.usedAmounts,
+    minAmounts,
+    expectedShares: estimate.shares,
+    walletDeposits,
+    refDepositsUsed: [0n, 0n],
+    wrapAmount: wrap,
+    fee: fee?.amount ?? 0n,
+    steps: [...new Set(calls.map((c) => c.step))],
+    zap: quote,
+  };
+}
+
+export interface DclSwapIntent {
+  tokenIn: string;
+  tokenOut: string;
+  poolId: string;
+  poolFee: number;
+  amountIn: bigint;
+  /** Quoted output for `amountIn`. */
+  expectedOut: bigint;
+  slippageBps: number;
+  payWithNative: boolean;
+  fee?: PlatformFee | null;
+}
+
+/** Swap through a Rhea DCL pool (single pool); output goes straight to the wallet. */
+export function planDclSwap(snapshot: AccountSnapshot, intent: DclSwapIntent): SwapPlan {
+  const { tokenIn, tokenOut, poolId, poolFee, amountIn, expectedOut, slippageBps, payWithNative, fee } = intent;
+  const accountId = snapshot.accountId;
+  if (amountIn <= 0n) throw new PlanError("zero-amount", "enter an amount");
+  if (expectedOut <= 0n) throw new PlanError("no-liquidity", "the pool has no depth for this trade");
+  const minAmountOut = applySlippage(expectedOut, slippageBps);
+  const inState = snapshot.tokens[tokenIn];
+  const outState = snapshot.tokens[tokenOut];
+  if (!inState || !outState) throw new Error("missing account state for swap tokens");
+
+  const calls: PlannedCall[] = [...tokenStorageCalls(outState, accountId, { user: true, ref: false })];
+  let wrapAmount = 0n;
+  if (tokenIn === WRAP_NEAR_CONTRACT_ID && payWithNative) {
+    wrapAmount = maxBig(amountIn - inState.walletBalance, 0n);
+    calls.push(...tokenStorageCalls(inState, accountId, { user: wrapAmount > 0n, ref: false }));
+    if (wrapAmount > 0n) {
+      calls.push({
+        step: "wrap",
+        receiverId: WRAP_NEAR_CONTRACT_ID,
+        methodName: "near_deposit",
+        args: {},
+        gas: GAS.NEAR_DEPOSIT,
+        deposit: wrapAmount,
+        label: `wrap ${fmtAmount(wrapAmount, NEAR_DECIMALS)} NEAR → wNEAR`,
+      });
+    }
+  } else if (amountIn > inState.walletBalance) {
+    throw new PlanError("insufficient-token", `not enough ${displaySymbol(tokenIn, inState.metadata)} in your wallet`);
+  }
+  calls.push({
+    step: "swap",
+    receiverId: tokenIn,
+    methodName: "ft_transfer_call",
+    args: dclSwapArgs(poolId, tokenOut, amountIn, minAmountOut),
+    gas: GAS.DCL_SWAP,
+    deposit: ONE_YOCTO,
+    label: `swap on Rhea (${poolFee / 10_000}% pool) · min ${fmtAmount(minAmountOut, outState.metadata.decimals)} ${displaySymbol(tokenOut, outState.metadata)}`,
+  });
+  if (fee) calls.push(feeCall(fee));
+  assertNativeBudget(snapshot, calls);
+  return {
+    calls,
+    transactions: groupCalls(calls),
+    expectedOut,
+    minAmountOut,
+    wrapAmount,
+    fee: fee?.amount ?? 0n,
+    steps: [...new Set(calls.map((c) => c.step))],
   };
 }
 

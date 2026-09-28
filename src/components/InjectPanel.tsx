@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useAccountSnapshot, useFtMetadata, usePlatformFee, usePoolShares, useSwapRoutes } from "../hooks/useRefData";
+import { REF_QUERY_ROOT, useAccountSnapshot, useDclPools, useFtMetadata, usePlatformFee, usePoolShares, useSwapRoutes } from "../hooks/useRefData";
+import { useQuery } from "@tanstack/react-query";
 import { useNearInjection, type InjectionPhase } from "../hooks/useNearInjection";
 import {
   explorerTxUrl,
@@ -18,7 +19,9 @@ import {
   PlanError,
   planInjection,
   planZapInjection,
+  planZapViaDcl,
   quoteZap,
+  quoteZapViaDcl,
   type InjectionPlan,
   type PlatformFee,
   type RefPool,
@@ -185,26 +188,45 @@ function NearOnlyForm({
   const routesLoading = r0.isLoading || r1.isLoading;
   const missing = routes.findIndex((r) => r === undefined);
 
+  // No Ref route for the token? Buy it from a Rhea DCL pool (launchpad coins trade only there).
+  const nearSide = pool.tokenIds.indexOf(W);
+  const buySide = nearSide === 0 ? 1 : nearSide === 1 ? 0 : -1;
+  const needsDcl = !routesLoading && missing >= 0 && missing === buySide;
+  const dclPoolsQ = useDclPools(needsDcl ? W : null, needsDcl ? pool.tokenIds[buySide] : null);
+  const dclPools = useMemo(() => dclPoolsQ.data ?? [], [dclPoolsQ.data]);
+  const viaDcl = needsDcl && dclPools.length > 0;
+  const dclQuoteQ = useQuery({
+    queryKey: [REF_QUERY_ROOT, "dcl-zap", pool.id, pool.sharesTotalSupply.toString(), nearIn.toString(), dclPools.map((p) => p.id)],
+    queryFn: () => quoteZapViaDcl(pool, nearIn, dclPools),
+    enabled: viaDcl && nearIn > 1n,
+    staleTime: 10_000,
+    retry: 1,
+  });
+  const findingRoute = routesLoading || (needsDcl && dclPoolsQ.isLoading);
+  const unbuyable = !findingRoute && missing >= 0 && !viaDcl;
+
   const touched = useMemo(
-    () => [...new Set([W, ...pool.tokenIds, ...routes.flatMap((r) => r?.path ?? [])])],
+    () => [...new Set([W, ...pool.tokenIds, ...(viaDcl ? [] : routes.flatMap((r) => r?.path ?? []))])],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [routes, pool.id],
+    [routes, pool.id, viaDcl],
   );
   const snapshot = useAccountSnapshot(touched);
   const wnear = snapshot.data?.tokens[W];
   const native = snapshot.data?.native.available;
   const max = spendable(wnear, native ?? 0n, false, true, fee?.amount ?? 0n);
 
-  const quote = useMemo(
+  const refQuote = useMemo(
     () => (missing < 0 && nearIn > 1n ? quoteZap(pool, nearIn, routes as (SwapRoute | null)[]) : null),
     [pool, nearIn, routes, missing],
   );
+  const quote = viaDcl ? (dclQuoteQ.data ?? null) : refQuote;
   const preview = useMemo((): { plan: InjectionPlan | null; error: string | null } => {
     if (!quote || !snapshot.data || existingShares === undefined) return { plan: null, error: null };
     // The snapshot may not have caught up with a newly chosen route yet.
     if (touched.some((id) => !snapshot.data!.tokens[id])) return { plan: null, error: null };
     try {
-      return { plan: planZapInjection(snapshot.data, { pool, quote, slippageBps: slipBps, existingShares, fee }), error: null };
+      const intent = { pool, quote, slippageBps: slipBps, existingShares, fee };
+      return { plan: quote.dcl ? planZapViaDcl(snapshot.data, intent) : planZapInjection(snapshot.data, intent), error: null };
     } catch (e) {
       return { plan: null, error: planErrorText(e) };
     }
@@ -214,9 +236,10 @@ function NearOnlyForm({
   const cta = ((): { label: string; disabled: boolean; onClick?: () => void } => {
     if (!accountId) return { label: "Connect wallet", disabled: false, onClick: signIn };
     if (inj.busy) return { label: inj.awaitingWallet ? "Confirm in wallet" : "Working…", disabled: true };
-    if (routesLoading) return { label: "Finding route…", disabled: true };
-    if (missing >= 0) return { label: `Can't buy ${symbols[missing]} with NEAR`, disabled: true };
+    if (findingRoute) return { label: "Finding route…", disabled: true };
+    if (unbuyable) return { label: `Can't buy ${symbols[missing]} with NEAR`, disabled: true };
     if (nearIn <= 0n) return { label: "Enter an amount", disabled: true };
+    if (viaDcl && dclQuoteQ.isLoading) return { label: "Getting quote…", disabled: true };
     if (!snapshot.data || existingShares === undefined) return { label: "Checking balances…", disabled: true };
     if (nearIn > max) return { label: "Not enough NEAR", disabled: true };
     if (!quote) return { label: "Not enough liquidity", disabled: true };
@@ -232,7 +255,7 @@ function NearOnlyForm({
           slippageBps: slipBps,
           useRefDeposits: false,
           payWithNative: true,
-          nearOnly: { nearIn, routes: routes as (SwapRoute | null)[] },
+          nearOnly: { nearIn, routes: routes as (SwapRoute | null)[], dclPools: viaDcl ? dclPools : undefined },
         }),
     };
   })();
@@ -240,14 +263,14 @@ function NearOnlyForm({
   const plan = preview.plan;
 
   // Nothing to buy the token from: no Ref pool with liquidity holds it.
-  if (!routesLoading && missing >= 0) {
+  if (unbuyable) {
     const sym = symbols[missing];
     return (
       <>
         <div className="mt-3 rounded-xl bg-card2 p-4">
           <p className="font-medium text-ink">{sym} can't be bought yet</p>
           <p className="mt-1 text-sm text-muted">
-            No Ref pool has {sym} liquidity, so there's none to buy. The first deposit needs {sym} itself, usually from its creator. After that, NEAR only works here.
+            No Ref or Rhea pool has {sym} liquidity, so there's none to buy. The first deposit needs {sym} itself, usually from its creator. After that, NEAR only works here.
           </p>
         </div>
         <Button size="lg" variant="secondary" className="mt-4 w-full" onClick={onUseTwoTokens}>
@@ -276,6 +299,15 @@ function NearOnlyForm({
 
       {quote && (
         <dl className="mt-3 space-y-1.5 text-xs">
+          {quote.dcl && (
+            <div className="flex justify-between gap-3">
+              <dt className="text-muted">Buys</dt>
+              <dd className="truncate text-right text-ink tabular">
+                ≈{fmtAmount(quote.amounts[quote.dcl.side], decimals[quote.dcl.side])} {symbols[quote.dcl.side]}
+                <span className="text-faint"> · {fmtAmount(quote.spend[quote.dcl.side], NEAR_DECIMALS)} NEAR · Rhea {quote.dcl.fee / 10_000}% pool</span>
+              </dd>
+            </div>
+          )}
           {quote.routes.map((route, i) =>
             route ? (
               <div key={i} className="flex justify-between gap-3">
@@ -299,7 +331,7 @@ function NearOnlyForm({
               <div className="flex justify-between"><dt className="text-muted">Transactions</dt><dd className="text-ink tabular">{plan.transactions.length} · 1 approval</dd></div>
             </>
           )}
-          <p className="pt-1 text-faint">{empty ? "Empty pool: sets the starting price at the market rate. " : ""}Leftovers stay in your Ref balance.</p>
+          <p className="pt-1 text-faint">{empty ? "Empty pool: sets the starting price at the market rate. " : ""}{quote.dcl ? `Extra ${symbols[quote.dcl.side]} stays in your wallet.` : "Leftovers stay in your Ref balance."}</p>
         </dl>
       )}
 
@@ -434,7 +466,12 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const W = WRAP_NEAR_CONTRACT_ID;
   const buy0 = useSwapRoutes(pool.tokenIds[0] !== W ? W : null, pool.tokenIds[0]);
   const buy1 = useSwapRoutes(pool.tokenIds[1] !== W ? W : null, pool.tokenIds[1]);
-  const buyable = [buy0, buy1].every((q, i) => pool.tokenIds[i] === W || (q.data?.length ?? 0) > 0);
+  const nearIdx = pool.tokenIds.indexOf(W);
+  const soleToken = nearIdx === 0 ? pool.tokenIds[1] : nearIdx === 1 ? pool.tokenIds[0] : null;
+  const refRoutesMissing = [buy0, buy1].some((q, i) => pool.tokenIds[i] !== W && q.isSuccess && q.data.length === 0);
+  const dclForToken = useDclPools(refRoutesMissing && soleToken ? W : null, refRoutesMissing ? soleToken : null);
+  const buyable =
+    [buy0, buy1].every((q, i) => pool.tokenIds[i] === W || (q.data?.length ?? 0) > 0) || (dclForToken.data?.length ?? 0) > 0;
 
   const footer = (
     <>

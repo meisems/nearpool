@@ -14,8 +14,10 @@ import {
   loadAccountSnapshot,
   planInjection,
   planZapInjection,
+  planZapViaDcl,
   PlanError,
   quoteZap,
+  quoteZapViaDcl,
   toWalletTransactions,
   type InjectionPlan,
   type PlannedTransaction,
@@ -24,6 +26,7 @@ import {
 } from "../lib/refFinance";
 import { publishInjection } from "../lib/activity";
 import { REF_QUERY_ROOT } from "./useRefData";
+import type { DclPool } from "../lib/dcl";
 
 /**
  * Pipeline phases, in order. `checking-storage` runs before the wallet
@@ -60,7 +63,7 @@ export interface InjectionRequest {
    * NEAR only: put in `nearIn` NEAR; the other side(s) are bought with part
    * of it via `routes` (null for a wNEAR side). `amounts` is ignored.
    */
-  nearOnly?: { nearIn: bigint; routes: (SwapRoute | null)[] };
+  nearOnly?: { nearIn: bigint; routes: (SwapRoute | null)[]; dclPools?: DclPool[] };
 }
 
 export interface InjectionReceipt {
@@ -155,7 +158,12 @@ export function useNearInjection() {
           getPlatformFee(),
         ]);
         let nextPlan: InjectionPlan;
-        if (zap) {
+        if (zap?.dclPools?.length) {
+          // Token bought from a Rhea DCL pool: re-quote now for current prices.
+          const quote = await quoteZapViaDcl(pool, zap.nearIn, zap.dclPools);
+          if (!quote) throw new PlanError("no-liquidity", "couldn't buy this token with NEAR");
+          nextPlan = planZapViaDcl(snapshot, { pool, quote, slippageBps: request.slippageBps, existingShares, fee });
+        } else if (zap) {
           // Re-read every pool on the routes so the split and minimums use current reserves.
           const fresh = new Map<number, RefPool>([[pool.id, pool]]);
           const routeIds = [...new Set(zap.routes.flatMap((r) => r?.pools.map((p) => p.id) ?? []))].filter((id) => id !== pool.id);

@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_NEAR_FALLBACK_RPC_URLS?: string;
   readonly VITE_POOL_RPC_URL?: string;
   readonly VITE_REF_CONTRACT_ID?: string;
+  readonly VITE_DCL_CONTRACT_ID?: string;
   readonly VITE_WRAP_NEAR_CONTRACT_ID?: string;
   readonly VITE_EXPLORER_URL?: string;
   /** NEAR account that receives the interface fee (default nearpoolpf.near). */

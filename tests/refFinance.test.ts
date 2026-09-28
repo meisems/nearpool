@@ -9,10 +9,12 @@ import {
 } from "../src/utils/zapMath";
 import {
   groupCalls, planInjection, planSwap, PlanError, toWalletTransactions, explainNearError, bestRoute, quoteRoute, planCreatePool, quoteZap, planZapInjection,
+  planZapViaDcl, planDclSwap, type ZapQuote,
   type AccountSnapshot, type RefPool, type TokenAccountState, type PlannedCall,
 } from "../src/lib/refFinance";
 import { findOutcomeFailure, outcomeReturnValue, isValidAccountId } from "../src/lib/near";
 import { parseTokenInput } from "../src/lib/tokenInput";
+import { dclPoolId, dclSwapArgs } from "../src/lib/dcl";
 
 const NEAR = 10n ** 24n;
 const USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
@@ -348,5 +350,56 @@ test("NEAR-only into a pool without NEAR, and into an empty pool", () => {
   const pe = planZapInjection(snapshot(), { pool: fresh, quote: qe, slippageBps: 50, existingShares: 0n });
   const addE = pe.calls.find((c) => c.methodName === "add_liquidity")!;
   assert.deepEqual(addE.args.min_amounts, addE.args.amounts);
+});
+test("Rhea DCL: pool id sorts tokens, swap message matches the Ref SDK", () => {
+  const NPAID = "npaid-831d2b.nearpaid.near";
+  assert.equal(dclPoolId("wrap.near", NPAID, 10000), `${NPAID}|wrap.near|10000`);
+  assert.equal(dclPoolId(NPAID, "wrap.near", 10000), dclPoolId("wrap.near", NPAID, 10000));
+  const args = dclSwapArgs(`${NPAID}|wrap.near|10000`, NPAID, 5n, 4n);
+  assert.equal(args.receiver_id, "dclv2.ref-labs.near");
+  assert.equal(args.amount, "5");
+  assert.deepEqual(JSON.parse(args.msg), { Swap: { pool_ids: [`${NPAID}|wrap.near|10000`], output_token: NPAID, min_output_amount: "4" } });
+});
+test("NEAR only via Rhea: register, wrap, DCL buy, deposit both, add_liquidity into an empty pool", () => {
+  const NPAID = "npaid-831d2b.nearpaid.near";
+  const target: RefPool = { id: 8728, kind: "SIMPLE_POOL", tokenIds: ["wrap.near", NPAID], reserves: [0n, 0n], totalFeeBps: 30, sharesTotalSupply: 0n };
+  const poolId = `${NPAID}|wrap.near|10000`;
+  const quote: ZapQuote = { nearIn: 2n * NEAR, spend: [NEAR, NEAR], routes: [null, null], amounts: [NEAR, 1_000_000n * NEAR], reserves: [0n, 0n], dcl: { side: 1, poolId, fee: 10000 } };
+  const snap = snapshot({}, { [NPAID]: token(NPAID, 24, { userStorage: null, refStorageOnToken: null, whitelisted: false }) });
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
+  const plan = planZapViaDcl(snap, { pool: target, quote, slippageBps: 100, existingShares: 0n, fee });
+  assert.deepEqual(methods(plan.calls), [
+    "R:register_tokens",
+    "U:storage_deposit", "U:storage_deposit",
+    "W:near_deposit", "W:ft_transfer_call", "W:ft_transfer_call",
+    "U:ft_transfer_call",
+    "R:add_liquidity",
+    "U:transfer",
+  ]);
+  const minOut = applySlippage(1_000_000n * NEAR, 100);
+  const swap = plan.calls[4];
+  assert.equal(swap.args.receiver_id, "dclv2.ref-labs.near");
+  assert.deepEqual(JSON.parse(swap.args.msg as string), { Swap: { pool_ids: [poolId], output_token: NPAID, min_output_amount: minOut.toString() } });
+  assert.equal(swap.args.amount, NEAR.toString());
+  assert.equal(plan.calls[5].args.receiver_id, REF);
+  assert.equal(plan.calls[5].args.amount, NEAR.toString());
+  assert.equal(plan.calls[6].args.amount, minOut.toString());
+  const add = plan.calls[7];
+  assert.deepEqual(add.args.amounts, [NEAR.toString(), minOut.toString()]);
+  assert.deepEqual(add.args.min_amounts, add.args.amounts); // empty pool: exact amounts set the price
+  assert.equal(plan.wrapAmount, 2n * NEAR);
+  for (const tx of plan.transactions) assert.ok(tx.calls.reduce((g, c) => g + c.gas, 0n) <= 300n * 10n ** 12n);
+  // The wallet is registered on the token before the swap sends it there.
+  assert.ok(plan.transactions.findIndex((t) => t.receiverId === NPAID) < plan.transactions.findIndex((t) => t.calls.includes(swap)));
+});
+test("Rhea DCL swap: wrap, register output, ft_transfer_call to DCL, fee last", () => {
+  const NPAID = "npaid-831d2b.nearpaid.near";
+  const snap = snapshot({}, { [NPAID]: token(NPAID, 24, { userStorage: null }) });
+  const fee = { receiverId: "nearpoolpf.near", amount: NEAR / 10n };
+  const plan = planDclSwap(snap, { tokenIn: "wrap.near", tokenOut: NPAID, poolId: `${NPAID}|wrap.near|10000`, poolFee: 10000, amountIn: NEAR, expectedOut: 500n, slippageBps: 50, payWithNative: true, fee });
+  assert.deepEqual(methods(plan.calls), ["U:storage_deposit", "W:near_deposit", "W:ft_transfer_call", "U:transfer"]);
+  assert.equal(plan.minAmountOut, applySlippage(500n, 50));
+  assert.equal(plan.calls[2].args.receiver_id, "dclv2.ref-labs.near");
+  assert.throws(() => planDclSwap(snap, { tokenIn: NPAID, tokenOut: "wrap.near", poolId: "x", poolFee: 10000, amountIn: 10n ** 30n, expectedOut: 1n, slippageBps: 50, payWithNative: true }), (e: unknown) => e instanceof PlanError && e.code === "insufficient-token");
 });
 console.log(`\n${passed} passed`);
