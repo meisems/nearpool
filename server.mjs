@@ -16,7 +16,7 @@ const REF_CONTRACT_ID = process.env.VITE_REF_CONTRACT_ID || "v2.ref-finance.near
 const LP_LOCK_ACCOUNT_ID = "0".repeat(64);
 const RPC_URLS = [
   process.env.NEAR_RPC_URL || process.env.VITE_NEAR_RPC_URL || "https://rpc.mainnet.near.org",
-  ...(process.env.NEAR_FALLBACK_RPC_URLS || process.env.VITE_NEAR_FALLBACK_RPC_URLS || "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com")
+  ...(process.env.NEAR_FALLBACK_RPC_URLS || process.env.VITE_NEAR_FALLBACK_RPC_URLS || "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com,https://archival-rpc.mainnet.near.org,https://rpc.intea.rs")
     .split(",")
     .map((url) => url.trim())
     .filter(Boolean),

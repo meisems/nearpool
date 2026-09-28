@@ -34,7 +34,7 @@ migrations_dir = "migrations"
 # overrides the value here.
 VITE_NEAR_RPC_URL = "https://free.rpc.fastnear.com" # public RPC: token info, balances, wallet
 VITE_POOL_RPC_URL = "/api/rpc" # pools and swaps: the Worker proxy, which uses the NEAR_RPC_URL secret (Lava)
-VITE_NEAR_FALLBACK_RPC_URLS = "https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org"
+VITE_NEAR_FALLBACK_RPC_URLS = "https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org,https://archival-rpc.mainnet.near.org,https://rpc.intea.rs"
 VITE_REF_CONTRACT_ID = "v2.ref-finance.near"
 VITE_WRAP_NEAR_CONTRACT_ID = "wrap.near"
 VITE_EXPLORER_URL = "https://nearblocks.io"
@@ -43,7 +43,7 @@ VITE_FEE_NEAR = "0.1"
 VITE_WALLETCONNECT_PROJECT_ID = "7f0cf24607660fc883b16c16902f5b08"
 
 # --- Worker runtime (/api/rpc proxy, activity feed) ---
-NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com"
+NEAR_FALLBACK_RPC_URLS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com,https://archival-rpc.mainnet.near.org,https://rpc.intea.rs"
 REF_CONTRACT_ID = "v2.ref-finance.near"
 
 [observability]

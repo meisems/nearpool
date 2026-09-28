@@ -34,7 +34,7 @@ export interface ActivityPost {
 }
 
 const DEFAULT_RPC = "https://rpc.mainnet.near.org";
-const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com";
+const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com,https://archival-rpc.mainnet.near.org,https://rpc.intea.rs";
 const MAX_BODY_BYTES = 16_384;
 const BASE58_HASH = /^[1-9A-HJ-NP-Za-km-z]{43,44}$/;
 const ACCOUNT_ID = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;

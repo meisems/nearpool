@@ -13,7 +13,7 @@
 import type { Env } from "./activity";
 
 const DEFAULT_RPC = "https://rpc.mainnet.near.org";
-const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com";
+const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com,https://archival-rpc.mainnet.near.org,https://rpc.intea.rs";
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_BATCH = 10;
 
