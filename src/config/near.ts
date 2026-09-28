@@ -217,6 +217,10 @@ export const COMMON_TOKENS: TokenPreset[] = [
   { id: "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near", symbol: "AURORA", decimals: 18 },
 ];
 
+export const NEARPOOL_TOKEN_ID = "nearpool-553815.nearpaid.near";
+export const NEARPOOL_NEARPAID_URL = `https://nearpaid.com/t/${NEARPOOL_TOKEN_ID}`;
+export const NEARPOOL_LIQUIDITY_PROOF_URL = "https://nearpaid.com/proof/nearpool-443815.nearpaid.near";
+
 /**
  * Common pairs offered as one-click shortcuts. Pool IDs are resolved
  * on-chain at runtime (deepest SIMPLE_POOL containing both tokens) rather

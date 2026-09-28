@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { explorerAccountUrl, FEE_AMOUNT, FEE_ENABLED, FEE_RECEIVER_ID, NEAR_DECIMALS, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
+import { explorerAccountUrl, FEE_AMOUNT, FEE_ENABLED, FEE_RECEIVER_ID, NEAR_DECIMALS, NEARPOOL_LIQUIDITY_PROOF_URL, NEARPOOL_NEARPAID_URL, NEARPOOL_TOKEN_ID, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
 import { useNearWallet } from "../context/NearWalletContext";
 import { useFtMetadata, useLockedShares, usePool, useTokenPools } from "../hooks/useRefData";
 import { useTokenMarket } from "../hooks/useTokenMarket";
@@ -195,6 +195,17 @@ export function TokenPage() {
               >
                 <IconPlus size={13} /> New pool
               </button>
+            </div>
+          )}
+
+          {tokenId === NEARPOOL_TOKEN_ID && (
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-line pt-3 text-xs">
+              <a href={NEARPOOL_NEARPAID_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+                Buy / sell on NearPaid <IconExternal size={11} />
+              </a>
+              <a href={NEARPOOL_LIQUIDITY_PROOF_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-muted hover:text-ink hover:underline">
+                Liquidity proof <IconExternal size={11} />
+              </a>
             </div>
           )}
         </Card>
