@@ -44,8 +44,14 @@ export const RPC_URLS: string[] = [NODE_URL, ...FALLBACK_RPC_URLS];
  * NEAR_RPC_URL secret (e.g. Lava). The public RPCs above are the fallbacks.
  * Unset, Ref reads use the same endpoints as everything else.
  */
-export const POOL_RPC_URL: string = env.VITE_POOL_RPC_URL ? resolveRpcUrl(String(env.VITE_POOL_RPC_URL).trim()) : NODE_URL;
-export const POOL_RPC_URLS: string[] = [POOL_RPC_URL, ...RPC_URLS.filter((url) => url !== POOL_RPC_URL)];
+const configuredPoolRpcUrl = String(env.VITE_POOL_RPC_URL || "").trim();
+export const POOL_RPC_URL: string = configuredPoolRpcUrl ? resolveRpcUrl(configuredPoolRpcUrl) : NODE_URL;
+// A same-origin proxy owns its server-side fallbacks. Do not append public
+// RPC URLs here: the browser may not have CORS access to them, and retrying
+// them client-side duplicates rate-limited requests after the proxy fails.
+export const POOL_RPC_URLS: string[] = configuredPoolRpcUrl.startsWith("/")
+  ? [POOL_RPC_URL]
+  : [POOL_RPC_URL, ...RPC_URLS.filter((url) => url !== POOL_RPC_URL)];
 
 export const REF_FINANCE_CONTRACT_ID: string = env.VITE_REF_CONTRACT_ID || "v2.ref-finance.near";
 /**
