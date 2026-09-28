@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { cacheDel, cacheGet, cacheSet, parseWithBigInt, stringifyWithBigInt } from "./lib/cache";
 import { NearWalletProvider } from "./context/NearWalletContext";
 import { EXPLORER_URL } from "./config/near";
 import { ThemeProvider } from "./components/ThemeProvider";
@@ -12,13 +15,44 @@ import { Logo } from "./components/Logo";
 import { newVersionAvailable, watchForNewVersion } from "./lib/appVersion";
 import { DocsPage, HomePage, InfoPage, PoolRedirect, SwapPage, TokenPage, TrackPage } from "./pages";
 
+const DAY_MS = 24 * 60 * 60_000;
+
 const queryClient = new QueryClient({
   defaultOptions: {
     // Refetch when the browser tab regains focus so balances and pools are
-    // current without a manual refresh.
-    queries: { retry: 1, staleTime: 4_000, refetchOnWindowFocus: true },
+    // current without a manual refresh. gcTime ≥ the persisted maxAge so
+    // restored data isn't dropped before it's used.
+    queries: { retry: 1, staleTime: 4_000, refetchOnWindowFocus: true, gcTime: DAY_MS },
   },
 });
+
+/**
+ * Keep query results across reloads (IndexedDB): a reload renders the last
+ * known tokens, pools and balances at once and refreshes them in the
+ * background. A new deploy (build id) starts from an empty cache.
+ */
+const PERSISTED = new Set([
+  "ft-metadata",
+  "token-pools",
+  "pair-pools",
+  "pool",
+  "snapshot",
+  "native",
+  "shares",
+  "locked-shares",
+  "dcl-pools",
+  "swap-routes",
+  "platform-fee",
+]);
+const persister = createAsyncStoragePersister({
+  storage: { getItem: (k) => cacheGet<string>(k).then((v) => v ?? null), setItem: cacheSet, removeItem: cacheDel },
+  key: "nearpool-queries",
+  serialize: stringifyWithBigInt,
+  deserialize: parseWithBigInt,
+  throttleTime: 2_000,
+});
+const shouldPersist = (query: Query) =>
+  query.state.status === "success" && (PERSISTED.has(String(query.queryKey[1])) || query.queryKey[0] === "activity-feed");
 
 function Footer() {
   return (
@@ -124,7 +158,10 @@ function Shell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister, maxAge: DAY_MS, buster: __BUILD_ID__, dehydrateOptions: { shouldDehydrateQuery: shouldPersist } }}
+      >
         <NearWalletProvider>
           <ThemeProvider>
             <ToastProvider>
@@ -135,7 +172,7 @@ export default function App() {
             </ToastProvider>
           </ThemeProvider>
         </NearWalletProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </BrowserRouter>
   );
 }

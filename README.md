@@ -36,6 +36,16 @@ creation. It's a plain NEAR transfer to `nearpoolpf.near`, sent as the last tran
 batch and shown before signing. **All fees fund buyback-and-burn and platform development.**
 Ref Finance's own pool fees apply separately. Change the amount with `VITE_FEE_NEAR` (`0` disables it).
 
+### Caching
+
+- **Ref pool index** (all simple pools, used for pool lists and swap routes): kept in memory and
+  IndexedDB. A reload uses it immediately; new pools are fetched incrementally (at most once a
+  minute), reserves are refreshed by a background scan every 5 minutes, and pools a swap route uses
+  are re-read before quoting.
+- **Query cache** (token info, pools, balances, shares, routes, activity): persisted to IndexedDB for
+  24 hours, so a reload renders the last known values instantly and refreshes them in the background.
+  A new deploy starts from an empty cache.
+
 ## Stack
 
 - React 18 + Vite + Tailwind v4 + Framer Motion
