@@ -10,6 +10,7 @@ import type {
 import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 import { EXPLORER_URL, FALLBACK_RPC_URLS, NETWORK_ID, NODE_URL, WALLETCONNECT_PROJECT_ID } from "../config/near";
 import { viewMethod as rpcViewMethod, type ViewArgs } from "../lib/near";
+import { WalletPicker } from "../components/WalletPicker";
 
 export type WalletStatus = "initializing" | "ready" | "error";
 
@@ -23,7 +24,7 @@ export interface NearWalletContextValue {
   wallet: Wallet | null;
   status: WalletStatus;
   error: string | null;
-  /** Open the wallet selection modal. */
+  /** Open the wallet picker (detected extensions first). */
   signIn: () => void;
   /** Disconnect the active wallet session. */
   signOut: () => Promise<void>;
@@ -72,6 +73,12 @@ function getSelector(): Promise<SelectorBundle> {
         { setupOKXWallet },
         { setupSender },
         { setupNightly },
+        { setupCoin98Wallet },
+        { setupMathWallet },
+        { setupBitgetWallet },
+        { setupWelldoneWallet },
+        { setupXDEFI },
+        { setupNarwallets },
       ] = await Promise.all([
         import("@near-wallet-selector/core"),
         import("@near-wallet-selector/modal-ui"),
@@ -83,6 +90,12 @@ function getSelector(): Promise<SelectorBundle> {
         import("@near-wallet-selector/okx-wallet"),
         import("@near-wallet-selector/sender"),
         import("@near-wallet-selector/nightly"),
+        import("@near-wallet-selector/coin98-wallet"),
+        import("@near-wallet-selector/math-wallet"),
+        import("@near-wallet-selector/bitget-wallet"),
+        import("@near-wallet-selector/welldone-wallet"),
+        import("@near-wallet-selector/xdefi"),
+        import("@near-wallet-selector/narwallets"),
       ]);
       // Covers desktop (extensions + web wallets) and mobile (web wallets that
       // work in any mobile browser, Telegram/app wallets via deep link, and
@@ -116,6 +129,12 @@ function getSelector(): Promise<SelectorBundle> {
           setupOKXWallet(),
           setupSender(),
           setupNightly(),
+          setupCoin98Wallet(),
+          setupMathWallet(),
+          setupBitgetWallet(),
+          setupWelldoneWallet(),
+          setupXDEFI(),
+          setupNarwallets(),
           ...(walletConnect ? [walletConnect] : []),
         ],
       });
@@ -140,6 +159,7 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [status, setStatus] = useState<WalletStatus>("initializing");
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -227,8 +247,15 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
   const accountId = accounts.find((account) => account.active)?.accountId ?? null;
 
   const signIn = useCallback(() => {
-    if (modal) modal.show();
-  }, [modal]);
+    if (selector) setPickerOpen(true);
+  }, [selector]);
+
+  const closePicker = useCallback(() => setPickerOpen(false), []);
+
+  // Close the picker once a wallet connects (some wallets finish in a popup or another app).
+  useEffect(() => {
+    if (accountId) setPickerOpen(false);
+  }, [accountId]);
 
   const signOut = useCallback(async () => {
     if (!selector) return;
@@ -256,7 +283,12 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
     [selector, modal, accounts, accountId, wallet, status, error, signIn, signOut, viewMethod, signAndSendTransactions],
   );
 
-  return <NearWalletContext.Provider value={value}>{children}</NearWalletContext.Provider>;
+  return (
+    <NearWalletContext.Provider value={value}>
+      {children}
+      <WalletPicker selector={selector} open={pickerOpen} onClose={closePicker} />
+    </NearWalletContext.Provider>
+  );
 }
 
 export function useNearWallet(): NearWalletContextValue {

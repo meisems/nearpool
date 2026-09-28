@@ -141,9 +141,10 @@ export const STORAGE_PRICE_PER_BYTE = 10n ** 19n;
 
 /**
  * Interface fee: a plain NEAR transfer appended as the last transaction of
- * every injection and swap batch. It's charged by this front end, not by a
- * contract, so it can't be forced on someone calling Ref directly.
- * Set VITE_FEE_NEAR=0 to disable.
+ * every injection, swap and pool creation batch. It's charged by this front
+ * end, not by a contract, so it can't be forced on someone calling Ref
+ * directly. All fees go to FEE_RECEIVER_ID and fund buyback-and-burn and
+ * platform development. Set VITE_FEE_NEAR=0 to disable.
  */
 export const FEE_RECEIVER_ID: string = (env.VITE_FEE_RECEIVER || "nearpoolpf.near").trim().toLowerCase();
 
@@ -153,7 +154,7 @@ function parseNearAmount(value: string): bigint {
   return BigInt(match[1]) * YOCTO_PER_NEAR + BigInt((match[2] ?? "").padEnd(24, "0") || "0");
 }
 
-/** Fee per injection or swap, in yoctoNEAR (default 0.1 NEAR). */
+/** Fee per injection, swap or pool creation, in yoctoNEAR (default 0.1 NEAR). */
 export const FEE_AMOUNT: bigint = parseNearAmount(env.VITE_FEE_NEAR ?? "0.1");
 
 /** False when the fee is configured to zero or no receiver is set. */
