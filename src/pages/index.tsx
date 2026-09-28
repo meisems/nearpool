@@ -331,7 +331,7 @@ const INFO: Record<InfoKind, { title: string; sections: Array<[string, ReactNode
       ["Contracts", <ul key="c" className="space-y-1"><li><code>{REF_FINANCE_CONTRACT_ID}</code> — Ref Finance</li><li><code>{WRAP_NEAR_CONTRACT_ID}</code> — wrapped NEAR</li></ul>],
       ["Fees & deposits", <ul key="f" className="list-disc space-y-1 pl-5">{FEE_ENABLED && <li>nearpool fee: {fmtAmount(FEE_AMOUNT, NEAR_DECIMALS)} NEAR per swap, injection or pool creation, sent to <code>{FEE_RECEIVER_ID}</code> as the last transaction.</li>}{FEE_ENABLED && <li>All fees fund buyback-and-burn and platform development.</li>}<li>Storage deposits (≈0.00125–0.1 NEAR) are refundable or stay withdrawable.</li><li>First position in a pool attaches 0.01 NEAR; unused part is refunded.</li></ul>],
       ["Tracking", <p key="t">Tracked tokens are saved in this browser only. Change is measured from the price when you started tracking.</p>],
-      ["Your LP", <p key="l">Shares stay in your Ref account. Withdraw any time on <a className="text-accent hover:underline" href="https://app.ref.finance" target="_blank" rel="noreferrer">app.ref.finance</a>.</p>],
+      ["Your LP", <p key="l">Shares stay in your Ref account. Withdraw any time on the pool's Rhea page (Rhea is Ref Finance's new name), e.g. <a className="text-accent hover:underline" href="https://app.rhea.finance" target="_blank" rel="noreferrer">app.rhea.finance/pool/&lt;id&gt;</a>. New pools don't appear in Rhea's pool search; open them by link.</p>],
     ],
   },
   terms: {
