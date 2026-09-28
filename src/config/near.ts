@@ -85,6 +85,8 @@ export const GAS = {
   ADD_SIMPLE_POOL: 50n * TGAS,
   /** Two-hop instant swap (Ref SDK uses up to 300 TGas for routed swaps). */
   SWAP_MULTI_HOP: 280n * TGAS,
+  /** Ref `swap` on the user's internal deposits (no cross-contract calls; up to two hops). */
+  REF_SWAP: 50n * TGAS,
 } as const;
 
 /** Hard protocol limit for a single transaction's prepaid gas. */
