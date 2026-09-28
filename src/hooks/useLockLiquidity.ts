@@ -20,7 +20,8 @@ export function useLockLiquidity() {
   const running = useRef(false);
 
   const run = useCallback(
-    async (poolId: number, shares: bigint) => {
+    /** `upToBalance`: lock `shares` or the whole balance if it's smaller (e.g. "what you added"). */
+    async (poolId: number, shares: bigint, upToBalance = false) => {
       if (running.current || !accountId) return false;
       running.current = true;
       setError(null);
@@ -32,7 +33,8 @@ export function useLockLiquidity() {
           getPoolShares(poolId, accountId),
           isLockAccountRegistered(poolId),
         ]);
-        const next = planLockShares(native, { poolId, shares, available, lockRegistered });
+        const amount = upToBalance && shares > available ? available : shares;
+        const next = planLockShares(native, { poolId, shares: amount, available, lockRegistered });
         setPlan(next);
         setPhase("signing");
         const outcomes = await executePlannedTransactions(signAndSendTransactions, accountId, next.transactions);

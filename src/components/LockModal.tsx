@@ -20,9 +20,12 @@ export function LockModal({
   pool,
   available,
   preset,
+  preAgreed = false,
   symbols,
   decimals,
 }: {
+  /** The user already confirmed "lock forever" (e.g. "Lock after adding"). */
+  preAgreed?: boolean;
   open: boolean;
   onClose: () => void;
   pool: RefPool;
@@ -39,14 +42,14 @@ export function LockModal({
 
   useEffect(() => {
     if (!open) return;
-    setPct(preset && preset > 0n && preset < available ? "preset" : 100);
-    setAgreed(false);
+    setPct(preset && preset > 0n ? "preset" : 100);
+    setAgreed(preAgreed);
     lock.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const shares = useMemo(() => {
-    if (pct === "preset") return preset && preset <= available ? preset : available;
+    if (pct === "preset") return preset && preset > 0n ? (available > 0n && preset > available ? available : preset) : available;
     return (available * BigInt(pct)) / 100n;
   }, [pct, preset, available]);
   const supply = pool.sharesTotalSupply;
@@ -98,9 +101,9 @@ export function LockModal({
             ) : (
               <>
                 <div className="mt-4 grid grid-cols-4 gap-1 text-xs font-semibold">
-                  {!!preset && preset > 0n && preset < available && (
+                  {!!preset && preset > 0n && (
                     <button onClick={() => setPct("preset")} className={`h-8 rounded-lg ${pct === "preset" ? "bg-accentsoft text-accentstrong" : "bg-card2 text-muted hover:text-ink"}`}>
-                      Just added
+                      What you added
                     </button>
                   )}
                   {PRESETS.map((p) => (
@@ -140,7 +143,7 @@ export function LockModal({
                   className="mt-4 w-full"
                   disabled={!agreed || shares <= 0n || lock.busy}
                   loading={lock.busy}
-                  onClick={() => void lock.run(pool.id, shares)}
+                  onClick={() => void lock.run(pool.id, shares, pct === "preset")}
                 >
                   {label}
                 </Button>

@@ -35,7 +35,7 @@ import { TokenAvatar } from "./TokenAvatar";
 import { CompletionModal } from "./CompletionModal";
 import { LockModal } from "./LockModal";
 import { Button, Card, IconButton } from "./ui";
-import { IconAlert, IconChevronDown, IconPlus, IconSettings } from "./icons";
+import { IconAlert, IconChevronDown, IconLock, IconPlus, IconSettings } from "./icons";
 
 /** Native NEAR held back from "max" when wrapping, beyond the gas reserve, for storage registrations. */
 const STORAGE_HEADROOM = 150_000_000_000_000_000_000_000n; // 0.15 NEAR
@@ -383,6 +383,9 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const [mode, setMode] = useState<"pair" | "near">("pair");
   /** Shares just minted, when the user chose to lock them from the completion screen. */
   const [lockPreset, setLockPreset] = useState<bigint | null>(null);
+  /** "Lock after adding": go straight to locking exactly the shares this deposit mints. */
+  const [lockAfter, setLockAfter] = useState(false);
+  const [lockPreAgreed, setLockPreAgreed] = useState(false);
 
   // Reset the form only when the pool or token actually changes, not when a
   // refetch (tab focus, polling) hands back a fresh pool object.
@@ -441,6 +444,15 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
 
   const inj = useNearInjection();
   useEffect(() => {
+    if (inj.phase !== "success" || !lockAfter || !inj.receipt) return;
+    setLockPreset(inj.receipt.sharesMinted);
+    setLockPreAgreed(true);
+    setLockAfter(false);
+    inj.reset();
+    setInputs(["", ""]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inj.phase]);
+  useEffect(() => {
     if (inj.phase === "error" && inj.error) toast(inj.error, "warn");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inj.phase]);
@@ -478,6 +490,23 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
 
   const footer = (
     <>
+      <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl bg-card2 px-3 py-2.5 text-sm">
+        <input
+          type="checkbox"
+          checked={lockAfter}
+          disabled={inj.busy}
+          onChange={(e) => setLockAfter(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-[var(--accent-fill)]"
+        />
+        <span>
+          <span className="flex items-center gap-1.5 text-ink"><IconLock size={13} /> Lock after adding</span>
+          {lockAfter && (
+            <span className="mt-0.5 block text-xs text-danger">
+              Permanent: the LP shares this deposit mints get locked forever. You'll approve the lock right after.
+            </span>
+          )}
+        </span>
+      </label>
       {fee && (
         <div className="mt-1 flex items-center justify-between text-sm">
           <span className="text-muted">Fee</span>
@@ -654,10 +683,14 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
 
       <LockModal
         open={lockPreset !== null}
-        onClose={() => setLockPreset(null)}
+        onClose={() => {
+          setLockPreset(null);
+          setLockPreAgreed(false);
+        }}
         pool={pool}
         available={maxBig(shares.data ?? 0n, lockPreset ?? 0n)}
         preset={lockPreset}
+        preAgreed={lockPreAgreed}
         symbols={symbols}
         decimals={decimals}
       />

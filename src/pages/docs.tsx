@@ -226,8 +226,15 @@ const SECTIONS: Array<{ id: string; title: string; body: ReactNode }> = [
       <>
         <p>Locking shows traders the liquidity can't be pulled. It is <B>permanent</B>: there is no unlock date and no way back.</p>
         <Steps>
-          <li>On the token page, with a position in the pool, click <B>Lock liquidity</B>. Or, right after adding liquidity, click <B>Lock these shares forever</B>.</li>
-          <li>Pick how much: <B>25%</B>, <B>50%</B>, <B>100%</B> of your shares, or <B>Just added</B>.</li>
+          <li>
+            Start from one of:
+            <Bullets>
+              <li><B>Lock after adding</B> (tick it in the Add liquidity panel before adding): once the deposit lands, the lock opens with exactly the LP shares that deposit minted.</li>
+              <li><B>Lock these shares forever</B> on the screen shown after adding.</li>
+              <li><B>Lock liquidity</B> on the token page, for any position you hold.</li>
+            </Bullets>
+          </li>
+          <li>Pick how much: <B>What you added</B> (exact shares from your last deposit), or <B>25%</B>, <B>50%</B>, <B>100%</B> of your shares.</li>
           <li>Check what it's worth now and its share of the pool.</li>
           <li>Tick <B>I understand this can't be undone</B>, click <B>Lock forever</B> and approve.</li>
         </Steps>
@@ -235,6 +242,7 @@ const SECTIONS: Array<{ id: string; title: string; body: ReactNode }> = [
           <li>Your LP shares are transferred (Ref <code>mft_transfer</code>) to <code className="break-all">{LP_LOCK_ACCOUNT_ID.slice(0, 6)}…{LP_LOCK_ACCOUNT_ID.slice(-4)}</code>, the all-zero account. Its key would have to match a public key of all zeros, which nobody holds, so no one can ever withdraw the shares.</li>
           <li>Trading fees earned by locked shares stay in the pool, locked with them.</li>
           <li>The pool card shows <B>X% locked forever</B>: anyone can verify it on-chain (Ref <code>get_pool_shares</code> for that account).</li>
+          <li>Confirmed locks are posted to <B>Recent</B> as <B>Locked forever</B>, after the server verifies the transaction on-chain.</li>
           <li>No nearpool fee. The first lock in a pool registers the lock account there: 0.01 NEAR storage, unused part refunded.</li>
         </Bullets>
         <Note>Timed locks (unlock after a date) need a dedicated locker contract; nearpool doesn't offer one yet.</Note>
