@@ -117,8 +117,8 @@ html {
   overflow-x: hidden;
 }
 
-/* The ambient glow layer in App.tsx paints the page light; body stays flat
-   so there is exactly one gradient source and no double-tinted seams. */
+/* The page texture (.page-texture, rendered in App.tsx) is the only
+   decoration; body stays flat so there are no double-tinted seams. */
 body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -128,6 +128,58 @@ body {
 }
 
 ::selection { background: var(--accent-soft); color: var(--ink); }
+
+/* ---- page texture: soft NEAR-green glow, a fading dot grid, fine grain ----
+   Fixed behind all content (App wraps it in an isolated stacking context),
+   static, and never intercepts clicks. Cards stay opaque for legibility. */
+:root {
+  --glow-1: var(--accent-fill);
+  --glow-2: #17c3d6;
+  --glow-1-a: 12%;
+  --glow-2-a: 7%;
+  --dot: color-mix(in oklab, var(--ink) 7%, transparent);
+  --grain-opacity: 0.04;
+  --grain-blend: multiply;
+}
+.dark {
+  --glow-1-a: 13%;
+  --glow-2-a: 8%;
+  --dot: color-mix(in oklab, var(--ink) 8%, transparent);
+  --grain-opacity: 0.035;
+  --grain-blend: screen;
+}
+.page-texture {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(64rem 30rem at 10% -10%, color-mix(in oklab, var(--glow-1) var(--glow-1-a), transparent), transparent 70%),
+    radial-gradient(52rem 28rem at 95% -6%, color-mix(in oklab, var(--glow-2) var(--glow-2-a), transparent), transparent 70%),
+    radial-gradient(40rem 24rem at 50% 115%, color-mix(in oklab, var(--glow-1) calc(var(--glow-2-a) * 0.7), transparent), transparent 70%);
+}
+.page-texture::before,
+.page-texture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+/* Dot grid, strongest near the top, fading out toward the edges. */
+.page-texture::before {
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.3px);
+  background-size: 22px 22px;
+  -webkit-mask-image: radial-gradient(ellipse 85% 65% at 50% 0%, #000 25%, transparent 80%);
+  mask-image: radial-gradient(ellipse 85% 65% at 50% 0%, #000 25%, transparent 80%);
+}
+/* Film grain (SVG turbulence noise, tiled). */
+.page-texture::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+}
+@media (prefers-contrast: more) {
+  .page-texture { display: none; }
+}
 
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 input, button { font-family: inherit; }

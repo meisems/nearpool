@@ -31,6 +31,7 @@ import {
 } from "../config/near";
 import { getNativeBalance, rpcProvider, viewMethod, type NativeBalance } from "./near";
 import { bestDclQuote, dclQuote, dclSwapArgs, type DclPool } from "./dcl";
+import { cacheGet, cacheSet } from "./cache";
 import { fmtAmount } from "./format";
 import {
   applySlippage,
@@ -198,36 +199,171 @@ export function displaySymbol(tokenId: string, meta?: Pick<FtMetadata, "symbol">
 /* ================================================================ pool discovery */
 
 const POOL_PAGE_SIZE = 200;
-const POOL_INDEX_TTL_MS = 5 * 60_000;
-let poolIndex: { at: number; pools: Promise<RefPool[]> } | null = null;
+/** Pages fetched at once during a full scan (the pool RPC is the keyed proxy). */
+const POOL_SCAN_PARALLEL = 8;
+/** Look for newly created pools at most this often (cheap: count + new pages). */
+const NEW_POOLS_CHECK_MS = 60_000;
+/** Refresh every pool's reserves in the background at most this often. */
+const RESERVES_REFRESH_MS = 5 * 60_000;
+const POOL_INDEX_KEY = "ref-pool-index-v1";
 
-async function loadAllSimplePools(): Promise<RefPool[]> {
-  const total = await getNumberOfPools();
+/**
+ * The simple-pool index behind pool discovery and swap routing. Ref has
+ * thousands of pools, so a full scan is slow; the index is kept in memory
+ * and in IndexedDB and served stale-while-revalidate:
+ * - a reload uses the saved index at once;
+ * - new pools (ids only grow; a pool's tokens never change) are fetched
+ *   incrementally, at most once a minute;
+ * - reserves are refreshed with a background full scan every 5 minutes.
+ * Pools the UI acts on are always re-read fresh (usePool, planners).
+ */
+interface PoolIndex {
+  pools: RefPool[];
+  /** Number of pool ids covered (`get_number_of_pools` at the last scan). */
+  scanned: number;
+  /** When reserves were last refreshed by a full scan. */
+  at: number;
+  /** When new pools were last checked. */
+  checkedAt: number;
+}
+/** Compact stored form: token ids interned; bigints as strings. */
+interface StoredPoolIndex {
+  v: 1;
+  scanned: number;
+  at: number;
+  tokens: string[];
+  rows: Array<[id: number, a: number, b: number, ra: string, rb: string, fee: number, shares: string]>;
+}
+
+let poolIndex: PoolIndex | null = null;
+let restored: Promise<void> | null = null;
+let fullScan: Promise<PoolIndex> | null = null;
+let newPoolsCheck: Promise<void> | null = null;
+
+function encodeIndex(index: PoolIndex): StoredPoolIndex {
+  const tokens: string[] = [];
+  const ids = new Map<string, number>();
+  const intern = (t: string) => {
+    let i = ids.get(t);
+    if (i === undefined) {
+      i = tokens.length;
+      tokens.push(t);
+      ids.set(t, i);
+    }
+    return i;
+  };
+  const rows = index.pools
+    .filter((p) => p.tokenIds.length === 2)
+    .map((p): StoredPoolIndex["rows"][number] => [
+      p.id,
+      intern(p.tokenIds[0]),
+      intern(p.tokenIds[1]),
+      p.reserves[0].toString(),
+      p.reserves[1].toString(),
+      p.totalFeeBps,
+      p.sharesTotalSupply.toString(),
+    ]);
+  return { v: 1, scanned: index.scanned, at: index.at, tokens, rows };
+}
+
+function decodeIndex(stored: StoredPoolIndex): PoolIndex {
+  return {
+    scanned: stored.scanned,
+    at: stored.at,
+    checkedAt: 0,
+    pools: stored.rows.map(([id, a, b, ra, rb, fee, shares]) => ({
+      id,
+      kind: SIMPLE_POOL,
+      tokenIds: [stored.tokens[a], stored.tokens[b]],
+      reserves: [BigInt(ra), BigInt(rb)],
+      totalFeeBps: fee,
+      sharesTotalSupply: BigInt(shares),
+    })),
+  };
+}
+
+async function fetchPoolPages(from: number, to: number): Promise<RefPool[]> {
   const pages: number[] = [];
-  for (let from = 0; from < total; from += POOL_PAGE_SIZE) pages.push(from);
+  for (let start = from; start < to; start += POOL_PAGE_SIZE) pages.push(start);
   const results: RefPool[] = [];
-  // Four pages in flight keeps public RPCs from rate limiting the scan.
-  for (let i = 0; i < pages.length; i += 4) {
-    const batch = await Promise.all(pages.slice(i, i + 4).map((from) => getPools(from, POOL_PAGE_SIZE)));
-    for (const page of batch) results.push(...page.filter((pool) => pool.kind === SIMPLE_POOL));
+  for (let i = 0; i < pages.length; i += POOL_SCAN_PARALLEL) {
+    const batch = await Promise.all(pages.slice(i, i + POOL_SCAN_PARALLEL).map((start) => getPools(start, Math.min(POOL_PAGE_SIZE, to - start))));
+    for (const page of batch) results.push(...page.filter((pool) => pool.kind === SIMPLE_POOL && pool.tokenIds.length === 2));
   }
   return results;
 }
 
-/** Drop the cached pool list (e.g. right after creating a pool). */
-export function invalidatePoolIndex() {
-  poolIndex = null;
+function saveIndex(index: PoolIndex) {
+  poolIndex = index;
+  void cacheSet(POOL_INDEX_KEY, encodeIndex(index));
 }
 
-function simplePoolIndex(): Promise<RefPool[]> {
-  if (!poolIndex || Date.now() - poolIndex.at > POOL_INDEX_TTL_MS) {
-    const pools = loadAllSimplePools();
-    pools.catch(() => {
-      poolIndex = null;
+function runFullScan(): Promise<PoolIndex> {
+  if (!fullScan) {
+    fullScan = (async () => {
+      const total = await getNumberOfPools();
+      const pools = await fetchPoolPages(0, total);
+      const now = Date.now();
+      const index = { pools, scanned: total, at: now, checkedAt: now };
+      saveIndex(index);
+      return index;
+    })().finally(() => {
+      fullScan = null;
     });
-    poolIndex = { at: Date.now(), pools };
   }
+  return fullScan;
+}
+
+function addNewPools(index: PoolIndex): Promise<void> {
+  if (!newPoolsCheck) {
+    newPoolsCheck = (async () => {
+      const total = await getNumberOfPools();
+      index.checkedAt = Date.now();
+      if (total > index.scanned) {
+        const fresh = await fetchPoolPages(index.scanned, total);
+        saveIndex({ ...index, pools: [...index.pools, ...fresh], scanned: total });
+      }
+    })()
+      .catch(() => {
+        /* keep serving the index we have */
+      })
+      .finally(() => {
+        newPoolsCheck = null;
+      });
+  }
+  return newPoolsCheck;
+}
+
+/** Look for pools created since the last check on the next lookup (e.g. right after creating one). */
+export function invalidatePoolIndex() {
+  if (poolIndex) poolIndex.checkedAt = 0;
+}
+
+async function simplePoolIndex(): Promise<RefPool[]> {
+  if (!poolIndex) {
+    restored ??= cacheGet<StoredPoolIndex>(POOL_INDEX_KEY).then((stored) => {
+      if (!poolIndex && stored?.v === 1 && Array.isArray(stored.rows)) poolIndex = decodeIndex(stored);
+    });
+    await restored;
+  }
+  if (!poolIndex) return (await runFullScan()).pools; // first visit: nothing saved yet
+  const now = Date.now();
+  if (now - poolIndex.checkedAt > NEW_POOLS_CHECK_MS) await addNewPools(poolIndex);
+  if (now - poolIndex.at > RESERVES_REFRESH_MS) void runFullScan().catch(() => undefined);
   return poolIndex.pools;
+}
+
+/** Re-read pools whose saved reserves may be stale (keeps quotes accurate). */
+async function freshPools(pools: RefPool[]): Promise<Map<number, RefPool>> {
+  const out = new Map<number, RefPool>(pools.map((p) => [p.id, p]));
+  // Just scanned: reserves are current already.
+  if (poolIndex && Date.now() - poolIndex.at < 30_000) return out;
+  const ids = [...out.keys()];
+  for (let i = 0; i < ids.length; i += 10) {
+    const batch = await Promise.all(ids.slice(i, i + 10).map((id) => getPool(id).catch(() => null)));
+    batch.forEach((p) => p && out.set(p.id, p));
+  }
+  return out;
 }
 
 const byReserveOf = (tokenId: string) => (a: RefPool, b: RefPool) => {
@@ -732,7 +868,7 @@ export function bestRoute(routes: SwapRoute[], amountIn: bigint): { route: SwapR
   return best;
 }
 
-const MAX_ROUTE_CANDIDATES = 40;
+const MAX_ROUTE_CANDIDATES = 20;
 
 /**
  * Candidate routes from `tokenIn` to `tokenOut` over Ref simple pools:
@@ -769,7 +905,9 @@ export async function findSwapRoutes(tokenIn: string, tokenOut: string): Promise
   }
   twoHop.sort((a, b) => (b.depth > a.depth ? 1 : b.depth < a.depth ? -1 : 0));
   routes.push(...twoHop.slice(0, MAX_ROUTE_CANDIDATES).map((c) => c.route));
-  return routes;
+  // Quote on current reserves: re-read the (few) pools these routes use.
+  const fresh = await freshPools(routes.flatMap((r) => r.pools));
+  return routes.map((r) => ({ path: r.path, pools: r.pools.map((p) => fresh.get(p.id) ?? p) }));
 }
 
 export interface SwapIntent {
