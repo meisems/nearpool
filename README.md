@@ -21,6 +21,13 @@ NEAR → USDC → token) using Ref's multi-step instant swap.
 
 Routes: `/` paste box, `/t/<token>?pool=<id>` token page, `/pool/<id>`, `/track`, `/swap?out=<token>`.
 
+## Fees
+
+nearpool adds a flat **0.1 NEAR** interface fee to every swap, liquidity injection and pool
+creation. It's a plain NEAR transfer to `nearpoolpf.near`, sent as the last transaction of the
+batch and shown before signing. **All fees fund buyback-and-burn and platform development.**
+Ref Finance's own pool fees apply separately. Change the amount with `VITE_FEE_NEAR` (`0` disables it).
+
 ## Stack
 
 - React 18 + Vite + Tailwind v4 + Framer Motion
@@ -76,7 +83,7 @@ For Cloudflare builds the `VITE_*` values are set in `wrangler.toml` `[vars]` (r
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` (interface fee recipient) |
-| `VITE_FEE_NEAR` | `0.1` NEAR per injection or swap; `0` disables |
+| `VITE_FEE_NEAR` | `0.1` NEAR per swap, injection or pool creation; `0` disables |
 | `VITE_WALLETCONNECT_PROJECT_ID` | unset. Set it (cloud.reown.com) to add WalletConnect QR pairing |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` | unset → in-memory activity feed (server only) |

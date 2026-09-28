@@ -117,7 +117,7 @@ file.
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` — receives the interface fee |
-| `VITE_FEE_NEAR` | `0.1` — fee per injection or swap; `0` disables it |
+| `VITE_FEE_NEAR` | `0.1` — fee per swap, injection or pool creation; `0` disables it |
 | `VITE_WALLETCONNECT_PROJECT_ID` | set in `wrangler.toml`; adds WalletConnect QR pairing. In the Reown dashboard (cloud.reown.com), add your site's domain to the project's allowlist |
 
 The public `rpc.mainnet.near.org` endpoint is heavily rate limited. For
