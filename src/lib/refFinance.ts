@@ -16,6 +16,7 @@ import {
   FEE_RECEIVER_ID,
   FT_STORAGE_DEPOSIT_FALLBACK,
   GAS,
+  LP_LOCK_ACCOUNT_ID,
   LP_STORAGE_DEPOSIT,
   POOL_CREATION_DEPOSIT,
   MAX_GAS_PER_TX,
@@ -337,7 +338,7 @@ export async function loadAccountSnapshot(accountId: string, tokenIds: string[])
 
 /* ================================================================ planning */
 
-export type PlanStep = "storage" | "wrap" | "deposit" | "inject" | "swap" | "fee";
+export type PlanStep = "storage" | "wrap" | "deposit" | "inject" | "swap" | "fee" | "lock";
 
 export interface PlannedCall {
   step: PlanStep;
@@ -1295,6 +1296,74 @@ export function planDclSwap(snapshot: AccountSnapshot, intent: DclSwapIntent): S
     fee: fee?.amount ?? 0n,
     steps: [...new Set(calls.map((c) => c.step))],
   };
+}
+
+/* ---------------------------------------------------------------- permanent LP lock */
+
+/** Ref multi-fungible-token id of a pool's LP shares. */
+export const lpTokenId = (poolId: number) => `:${poolId}`;
+
+/** LP shares of `poolId` locked forever (held by the unowned lock account). */
+export async function getLockedShares(poolId: number): Promise<bigint> {
+  return getPoolShares(poolId, LP_LOCK_ACCOUNT_ID);
+}
+
+/** Whether the lock account already has an LP record in the pool (Ref panics on a second `mft_register`). */
+export async function isLockAccountRegistered(poolId: number): Promise<boolean> {
+  if ((await getLockedShares(poolId)) > 0n) return true;
+  return !!(await viewMethod<boolean | null>(REF_FINANCE_CONTRACT_ID, "mft_has_registered", {
+    token_id: lpTokenId(poolId),
+    account_id: LP_LOCK_ACCOUNT_ID,
+  }));
+}
+
+export interface LockIntent {
+  poolId: number;
+  /** LP shares to lock. */
+  shares: bigint;
+  /** The wallet's current LP shares in the pool. */
+  available: bigint;
+  lockRegistered: boolean;
+}
+
+export interface LockPlan {
+  calls: PlannedCall[];
+  transactions: PlannedTransaction[];
+  shares: bigint;
+}
+
+/**
+ * Lock LP shares forever: `mft_transfer` them to LP_LOCK_ACCOUNT_ID, an
+ * account nobody controls (registering it in the pool first if needed).
+ * Irreversible; the shares' trading fees stay locked with them.
+ */
+export function planLockShares(native: NativeBalance, intent: LockIntent): LockPlan {
+  const { poolId, shares, available, lockRegistered } = intent;
+  if (shares <= 0n) throw new PlanError("zero-amount", "enter an amount");
+  if (shares > available) throw new PlanError("insufficient-token", "more than your LP shares in this pool");
+  const calls: PlannedCall[] = [];
+  if (!lockRegistered) {
+    calls.push({
+      step: "storage",
+      receiverId: REF_FINANCE_CONTRACT_ID,
+      methodName: "mft_register",
+      args: { token_id: lpTokenId(poolId), account_id: LP_LOCK_ACCOUNT_ID },
+      gas: GAS.MFT,
+      deposit: LP_STORAGE_DEPOSIT,
+      label: `register the lock account in pool #${poolId} · ${fmtNear(LP_STORAGE_DEPOSIT)} storage, unused part refunded`,
+    });
+  }
+  calls.push({
+    step: "lock",
+    receiverId: REF_FINANCE_CONTRACT_ID,
+    methodName: "mft_transfer",
+    args: { token_id: lpTokenId(poolId), receiver_id: LP_LOCK_ACCOUNT_ID, amount: shares.toString(), memo: "nearpool: LP locked forever" },
+    gas: GAS.MFT,
+    deposit: ONE_YOCTO,
+    label: `lock ${fmtAmount(shares, NEAR_DECIMALS)} LP shares of pool #${poolId} forever`,
+  });
+  assertNativeBudget({ native }, calls);
+  return { calls, transactions: groupCalls(calls), shares };
 }
 
 /* ---------------------------------------------------------------- pool creation */

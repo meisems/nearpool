@@ -33,6 +33,7 @@ import { estimateAddLiquidity, LP_SHARE_DECIMALS, maxBig, minBig, mulDiv, quoteC
 import { useToast } from "./Toasts";
 import { TokenAvatar } from "./TokenAvatar";
 import { CompletionModal } from "./CompletionModal";
+import { LockModal } from "./LockModal";
 import { Button, Card, IconButton } from "./ui";
 import { IconAlert, IconChevronDown, IconPlus, IconSettings } from "./icons";
 
@@ -380,6 +381,8 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [mode, setMode] = useState<"pair" | "near">("pair");
+  /** Shares just minted, when the user chose to lock them from the completion screen. */
+  const [lockPreset, setLockPreset] = useState<bigint | null>(null);
 
   // Reset the form only when the pool or token actually changes, not when a
   // refetch (tab focus, polling) hands back a fresh pool object.
@@ -649,11 +652,25 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
       </>
       )}
 
+      <LockModal
+        open={lockPreset !== null}
+        onClose={() => setLockPreset(null)}
+        pool={pool}
+        available={maxBig(shares.data ?? 0n, lockPreset ?? 0n)}
+        preset={lockPreset}
+        symbols={symbols}
+        decimals={decimals}
+      />
       <CompletionModal
         receipt={inj.receipt}
         tokens={symbols.map((symbol, i) => ({ symbol, decimals: decimals[i] }))}
         tracked={tracked}
         onTrack={onTrack}
+        onLock={() => {
+          setLockPreset(inj.receipt?.sharesMinted ?? null);
+          inj.reset();
+          setInputs(["", ""]);
+        }}
         onClose={() => {
           inj.reset();
           setInputs(["", ""]);

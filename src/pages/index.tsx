@@ -1,8 +1,8 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { explorerAccountUrl, FEE_AMOUNT, FEE_ENABLED, FEE_RECEIVER_ID, NEAR_DECIMALS, refPoolUrl, REF_FINANCE_CONTRACT_ID, WRAP_NEAR_CONTRACT_ID } from "../config/near";
 import { useNearWallet } from "../context/NearWalletContext";
-import { useFtMetadata, usePool, useTokenPools } from "../hooks/useRefData";
+import { useFtMetadata, useLockedShares, usePool, useTokenPools } from "../hooks/useRefData";
 import { useTokenMarket } from "../hooks/useTokenMarket";
 import { useWatchlist } from "../hooks/useWatchlist";
 import { isValidAccountId } from "../lib/near";
@@ -16,7 +16,8 @@ import { TrackedList } from "../components/TrackedList";
 import { SwapCard } from "../components/SwapCard";
 import { TokenAvatar } from "../components/TokenAvatar";
 import { Button, Card, CopyButton, fmtPrice, Skeleton, Stat } from "../components/ui";
-import { IconArrowUpRight, IconExternal, IconPlus, IconStar, IconStarFill, IconSwap } from "../components/icons";
+import { IconArrowUpRight, IconExternal, IconLock, IconPlus, IconStar, IconStarFill, IconSwap } from "../components/icons";
+import { LockModal } from "../components/LockModal";
 
 function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
@@ -106,6 +107,10 @@ export function TokenPage() {
   const requestedPool = poolParam !== null && /^\d{1,9}$/.test(poolParam) ? Number(poolParam) : null;
   const poolId = requestedPool ?? pools.data?.[0]?.id ?? null;
   const m = useTokenMarket(tokenId, poolId);
+  const locked = useLockedShares(poolId);
+  const lockSupply = m.pool?.sharesTotalSupply ?? 0n;
+  const lockedPct = lockSupply > 0n && locked.data ? Number(((locked.data * 10_000n) / lockSupply)) / 100 : 0;
+  const [lockOpen, setLockOpen] = useState(false);
   const tracked = watch.isTracked(tokenId);
   const symbol = displaySymbol(tokenId, meta.data);
   const poolHoldsToken = !!m.pool && m.pool.tokenIds.includes(tokenId) && m.pool.tokenIds.length === 2;
@@ -245,13 +250,29 @@ export function TokenPage() {
                       #{m.pool.id} <IconArrowUpRight size={13} />
                     </a>
                   }
-                  sub={`${(m.pool.totalFeeBps / 100).toFixed(2)}% fee`}
+                  sub={
+                    <>
+                      {(m.pool.totalFeeBps / 100).toFixed(2)}% fee
+                      {lockedPct > 0 && (
+                        <span className="mt-0.5 flex items-center gap-1 text-accent" title="LP shares held by an account nobody controls">
+                          <IconLock size={12} /> {lockedPct >= 99.995 ? "100" : lockedPct.toFixed(2)}% locked forever
+                        </span>
+                      )}
+                    </>
+                  }
                 />
                 <Stat
                   label="Your position"
                   value={!accountId ? "—" : m.shares > 0n ? `${(m.shareBps / 100).toFixed(2)}%` : "None"}
                   sub={m.shares > 0n ? `${fmtAmount(m.positionToken, m.decimals)} ${symbol} + ${fmtAmount(m.positionCounter, m.counterDecimals)} ${m.counterSymbol}` : undefined}
                 />
+                {accountId && m.shares > 0n && (
+                  <div className="col-span-2 flex justify-end sm:col-span-4">
+                    <Button variant="secondary" size="sm" onClick={() => setLockOpen(true)}>
+                      <IconLock size={13} /> Lock liquidity
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <p className="py-2 text-center text-sm text-muted">{m.error || m.pool ? `Pool #${poolId} doesn't hold ${symbol}` : "Pool unavailable"}</p>
@@ -265,6 +286,17 @@ export function TokenPage() {
             <ActivityList tokenId={tokenId} limit={8} />
           </div>
         </Card>
+
+        {m.pool && poolHoldsToken && (
+          <LockModal
+            open={lockOpen}
+            onClose={() => setLockOpen(false)}
+            pool={m.pool}
+            available={m.shares}
+            symbols={m.pool.tokenIds.map((id) => (id === tokenId ? symbol : m.counterSymbol))}
+            decimals={m.pool.tokenIds.map((id) => (id === tokenId ? m.decimals : m.counterDecimals))}
+          />
+        )}
 
     </div>
   );

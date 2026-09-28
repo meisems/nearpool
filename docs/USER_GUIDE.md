@@ -195,6 +195,36 @@ wNEAR. Fee: 0.1 NEAR per swap.
 
 ---
 
+## 9a. Lock liquidity (forever)
+
+Locking shows traders the liquidity can't be pulled. It is **permanent**:
+there is no unlock date and no way back.
+
+1. On the token page, with a position in the pool, click **Lock
+   liquidity**. Or, right after adding liquidity, click **Lock these shares
+   forever**.
+2. Pick how much: **25%**, **50%**, **100%** of your shares, or **Just
+   added**.
+3. Check what it's worth now and its share of the pool.
+4. Tick **I understand this can't be undone**, click **Lock forever** and
+   approve.
+
+How it works:
+- Your LP shares are transferred (Ref `mft_transfer`, token id `:<pool_id>`)
+  to `0000000000000000000000000000000000000000000000000000000000000000`, the
+  all-zero implicit account. Its key would have to match a public key of
+  all zeros, which nobody holds, so no one can ever withdraw the shares.
+- Trading fees earned by locked shares stay in the pool, locked with them.
+- The pool card shows **X% locked forever**. Anyone can verify it on-chain
+  with Ref `get_pool_shares` for that account.
+- No nearpool fee. The first lock in a pool registers the lock account
+  there (`mft_register`): 0.01 NEAR storage, unused part refunded.
+
+Timed locks (unlock after a date) need a dedicated locker contract;
+nearpool doesn't offer one yet.
+
+---
+
 ## 10. Fees and costs
 
 | What | Amount | Goes to |
@@ -207,6 +237,7 @@ wNEAR. Fee: 0.1 NEAR per swap.
 | Ref storage top-up | 0.01 NEAR (when needed) | your Ref storage |
 | First position in a pool | 0.01 NEAR | LP storage, unused part refunded |
 | Pool creation | 0.1 NEAR | pool storage, unused part refunded |
+| Liquidity lock (first in a pool) | 0.01 NEAR, no nearpool fee | lock account's LP storage, unused part refunded |
 | Gas | small; nearpool keeps 0.05 NEAR back | network |
 
 The nearpool fee is a plain NEAR transfer shown in the transaction list
@@ -237,6 +268,7 @@ this website, not by a contract.
 | `dclv2.ref-labs.near` | Rhea concentrated-liquidity pools (e.g. NearPaid coins) |
 | `wrap.near` | wrapped NEAR (wNEAR) |
 | `nearpoolpf.near` | nearpool fee receiver |
+| `000…000` (64 zeros) | unowned account holding locked LP shares |
 
 ---
 

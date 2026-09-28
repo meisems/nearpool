@@ -102,7 +102,16 @@ export const GAS = {
   REF_SWAP: 50n * TGAS,
   /** `ft_transfer_call` into the Rhea DCL contract carrying a `Swap` (Ref SDK: 180 TGas). */
   DCL_SWAP: 180n * TGAS,
+  /** Ref `mft_register` / `mft_transfer` of LP shares. */
+  MFT: 30n * TGAS,
 } as const;
+
+/**
+ * Where locked LP shares go: the all-zero implicit account. Its key would be
+ * the ed25519 public key 0x00…00, whose private key nobody knows, so shares
+ * sent here can never be withdrawn by anyone.
+ */
+export const LP_LOCK_ACCOUNT_ID = "0".repeat(64);
 
 /** Hard protocol limit for a single transaction's prepaid gas. */
 export const MAX_GAS_PER_TX = 300n * TGAS;

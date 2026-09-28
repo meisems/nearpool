@@ -6,7 +6,7 @@ import { fmtAmount, shortHash } from "../lib/format";
 import { LP_SHARE_DECIMALS } from "../utils/zapMath";
 import { TokenAvatar } from "./TokenAvatar";
 import { Button } from "./ui";
-import { IconCheck, IconExternal, IconStar, IconX } from "./icons";
+import { IconCheck, IconExternal, IconLock, IconStar, IconX } from "./icons";
 
 export interface TokenDisplay {
   symbol: string;
@@ -27,8 +27,11 @@ export function CompletionModal({
   tokens,
   tracked,
   onTrack,
+  onLock,
   onClose,
 }: {
+  /** Offer to lock the shares just minted, forever. */
+  onLock?: () => void;
   receipt: InjectionReceipt | null;
   /** Display metadata in pool token order. */
   tokens: TokenDisplay[];
@@ -88,7 +91,13 @@ export function CompletionModal({
               </a>
             </div>
 
-            <div className="mt-5 flex gap-2">
+            {onLock && receipt.sharesMinted > 0n && (
+              <button onClick={onLock} className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-line py-2 text-sm text-muted transition hover:text-ink">
+                <IconLock size={13} /> Lock these shares forever
+              </button>
+            )}
+
+            <div className="mt-3 flex gap-2">
               {onTrack && !tracked && (
                 <Button variant="secondary" className="flex-1" onClick={onTrack}>
                   <IconStar size={15} /> Track
