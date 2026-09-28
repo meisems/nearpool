@@ -150,8 +150,10 @@ function NearOnlyForm({
   existingShares,
   inj,
   footer,
+  onUseTwoTokens,
 }: {
   footer: ReactNode;
+  onUseTwoTokens: () => void;
   pool: RefPool;
   symbols: string[];
   decimals: number[];
@@ -236,6 +238,25 @@ function NearOnlyForm({
   })();
 
   const plan = preview.plan;
+
+  // Nothing to buy the token from: no Ref pool with liquidity holds it.
+  if (!routesLoading && missing >= 0) {
+    const sym = symbols[missing];
+    return (
+      <>
+        <div className="mt-3 rounded-xl bg-card2 p-4">
+          <p className="font-medium text-ink">{sym} can't be bought yet</p>
+          <p className="mt-1 text-sm text-muted">
+            No Ref pool has {sym} liquidity, so there's none to buy. The first deposit needs {sym} itself, usually from its creator. After that, NEAR only works here.
+          </p>
+        </div>
+        <Button size="lg" variant="secondary" className="mt-4 w-full" onClick={onUseTwoTokens}>
+          I have {sym}: add both tokens
+        </Button>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="mt-3">
@@ -409,6 +430,12 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
 
   const hasNear = pool.tokenIds.includes(WRAP_NEAR_CONTRACT_ID);
 
+  // Same (cached) route queries as the NEAR-only form: offer it only when every side can be bought.
+  const W = WRAP_NEAR_CONTRACT_ID;
+  const buy0 = useSwapRoutes(pool.tokenIds[0] !== W ? W : null, pool.tokenIds[0]);
+  const buy1 = useSwapRoutes(pool.tokenIds[1] !== W ? W : null, pool.tokenIds[1]);
+  const buyable = [buy0, buy1].every((q, i) => pool.tokenIds[i] === W || (q.data?.length ?? 0) > 0);
+
   const footer = (
     <>
       {fee && (
@@ -500,7 +527,7 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
       </div>
 
       {mode === "near" ? (
-        <NearOnlyForm pool={pool} symbols={symbols} decimals={decimals} slipBps={slipBps} fee={fee} existingShares={shares.data} inj={inj} footer={footer} />
+        <NearOnlyForm pool={pool} symbols={symbols} decimals={decimals} slipBps={slipBps} fee={fee} existingShares={shares.data} inj={inj} footer={footer} onUseTwoTokens={() => setMode("pair")} />
       ) : (
       <>
       <div className="mt-3 space-y-1.5">
@@ -574,7 +601,7 @@ export function InjectPanel({ pool, tokenId, onTrack, tracked }: { pool: RefPool
       )}
 
       {footer}
-      {short !== undefined && pool.tokenIds[short] !== WRAP_NEAR_CONTRACT_ID && (
+      {short !== undefined && pool.tokenIds[short] !== WRAP_NEAR_CONTRACT_ID && buyable && (
         <button onClick={() => setMode("near")} className="mt-3 w-full text-center text-xs font-semibold text-accent hover:underline">
           No {symbols[short]}? Add with NEAR only
         </button>
