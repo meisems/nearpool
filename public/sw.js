@@ -9,8 +9,16 @@
 //
 // Bump CACHE_NAME whenever this file's caching behavior changes; the
 // activate handler clears any cache that doesn't match the current name.
-const CACHE_NAME = "nearpool-shell-v3";
+const CACHE_NAME = "nearpool-shell-v4";
 const SHELL_URL = "/";
+
+function validAsset(response, pathname) {
+  if (!response?.ok) return false;
+  const type = (response.headers.get("content-type") || "").toLowerCase().split(";")[0].trim();
+  if (/\.js$/.test(pathname)) return /^(text|application)\/(javascript|ecmascript)$/.test(type);
+  if (/\.css$/.test(pathname)) return type === "text/css";
+  return type !== "text/html";
+}
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -30,7 +38,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("nearpool-shell-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });
@@ -49,7 +57,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          if (response.ok && response.headers.get("content-type")?.includes("text/html")) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(SHELL_URL, copy));
           }
@@ -64,16 +72,23 @@ self.addEventListener("fetch", (event) => {
   // Serving cached JS first could keep a browser on an old build after a
   // redeploy until a manual refresh.
   if (/\.(?:js|css|woff2?|png|jpg|jpeg|svg|ico|webmanifest)$/.test(url.pathname)) {
+    const cachedAsset = async () => {
+      const cached = await caches.match(request);
+      return validAsset(cached, url.pathname) ? cached : undefined;
+    };
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          if (response.ok) {
+        .then(async (response) => {
+          if (validAsset(response, url.pathname)) {
             const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+            event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)));
+            return response;
           }
-          return response;
+          // An open tab may still need an old chunk removed by a new deploy.
+          // Reuse a valid cached copy, never an HTML fallback cached as JavaScript.
+          return (await cachedAsset()) || response;
         })
-        .catch(() => caches.match(request)),
+        .catch(async () => (await cachedAsset()) || Response.error()),
     );
   }
 });

@@ -94,9 +94,9 @@ function WalletButton() {
 
   if (!accountId) {
     return (
-      <Button size="md" onClick={signIn} disabled={status !== "ready"} loading={status === "initializing"}>
+      <Button size="md" onClick={signIn} disabled={status === "initializing"} loading={status === "initializing"}>
         {status !== "initializing" && <IconWallet size={16} />}
-        {status === "error" ? "Unavailable" : "Connect"}
+        {status === "error" ? "Retry connection" : "Connect"}
       </Button>
     );
   }

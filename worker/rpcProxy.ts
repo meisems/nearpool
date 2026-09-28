@@ -13,7 +13,7 @@
 import type { Env } from "./activity";
 
 const DEFAULT_RPC = "https://rpc.mainnet.near.org";
-const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com";
+const DEFAULT_FALLBACKS = "https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com";
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_BATCH = 10;
 
@@ -75,7 +75,8 @@ export async function handleRpcProxy(request: Request, env: Env): Promise<Respon
     }
   }
 
-  // Fail over on network errors, rate limits and 5xx; a JSON-RPC error body is a real answer.
+  // Authentication errors describe the provider configuration, not the RPC call.
+  // Fail over on those too; keep successful HTTP JSON-RPC errors as real answers.
   let lastStatus = 502;
   for (const upstream of upstreams(env)) {
     try {
@@ -85,7 +86,7 @@ export async function handleRpcProxy(request: Request, env: Env): Promise<Respon
         body,
         signal: AbortSignal.timeout(20_000),
       });
-      if (response.status === 429 || response.status >= 500) {
+      if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
         lastStatus = response.status;
         continue;
       }

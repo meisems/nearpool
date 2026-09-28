@@ -9,9 +9,10 @@ nearpool is a static Vite build (`dist/`) plus a small Worker
 Everything else (wallet connection, RPC reads, transactions) happens in the
 browser. The site works without the feed, which only fills the landing page.
 
-Workers serves `dist/` as static assets. Only `/api/*` runs Worker code
-(`run_worker_first`). Unknown paths fall back to `index.html`, so client
-routes such as `/swap` and `/t/usdt.tether-token.near` load directly.
+Workers serves `dist/` as static assets. `/api/*` and `/assets/*` run Worker code
+(`run_worker_first`). Missing build assets return an uncached 404 instead of
+the HTML shell. Other unknown paths fall back to `index.html`, so client routes
+such as `/swap` and `/t/usdt.tether-token.near` load directly.
 
 ---
 
@@ -117,7 +118,7 @@ file.
 | --- | --- |
 | `VITE_NEAR_RPC_URL` | `https://free.rpc.fastnear.com` in `wrangler.toml`: public RPC for token info, balances and the wallet |
 | `VITE_POOL_RPC_URL` | `/api/rpc` in `wrangler.toml`: Ref Finance reads (pools, swaps) go through the Worker proxy and your `NEAR_RPC_URL` secret |
-| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://near.lava.build,https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org` |
+| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://rpc.mainnet.fastnear.com,https://rpc.mainnet.near.org` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_EXPLORER_URL` | `https://nearblocks.io` |
@@ -161,6 +162,11 @@ Check it: `curl -X POST https://<your-host>/api/rpc -H 'content-type: applicatio
 should return chain status, and the key must not appear anywhere in the
 site's page source or JS.
 
+An invalid or expired provider key (HTTP 401/403) now uses the configured public
+fallbacks. Replace the `NEAR_RPC_URL` secret with a working endpoint to restore
+the dedicated provider. The bare `https://near.lava.build` URL is not included
+as a default browser fallback.
+
 The proxy only forwards standard NEAR JSON-RPC methods (queries, blocks,
 transaction status and submission), rejects browser requests from other
 websites, limits request size, and falls back to the public endpoints if
@@ -199,8 +205,12 @@ after this update are added automatically; historical locks are not backfilled.
 ## Notes
 
 - **Caching.** `public/_headers` makes `/assets/*` immutable for a year
-  (the filenames are content-hashed) and keeps `sw.js` and the manifest
+  (the URLs include the build ID and content hash) and keeps `sw.js` and the manifest
   uncached so visitors never get stuck on an old service worker.
+  The service worker only caches JavaScript/CSS with the correct content type;
+  deploying this version clears its previous shell cache. A stale tab reloads
+  once per build on a failed dynamic import. If wallet loading still fails,
+  **Retry connection** reloads the page for a manual retry.
 - **Routes.** `/` (paste a token), `/t/<token>` (token page, `?pool=<id>`
   to pick a pool), `/pool/<id>`, `/track`, `/swap`. Older `/inject`,
   `/launch-pool` and `/buy` links redirect in the client.

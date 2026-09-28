@@ -7,7 +7,6 @@ import type {
   WalletModuleFactory,
   WalletSelector,
 } from "@near-wallet-selector/core";
-import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 import { EXPLORER_URL, FALLBACK_RPC_URLS, NETWORK_ID, NODE_URL, WALLETCONNECT_PROJECT_ID } from "../config/near";
 import { viewMethod as rpcViewMethod, type ViewArgs } from "../lib/near";
 import { WalletPicker } from "../components/WalletPicker";
@@ -16,7 +15,6 @@ export type WalletStatus = "initializing" | "ready" | "error";
 
 export interface NearWalletContextValue {
   selector: WalletSelector | null;
-  modal: WalletSelectorModal | null;
   accounts: AccountState[];
   /** Active NEAR account, or null when signed out. */
   accountId: string | null;
@@ -40,12 +38,7 @@ export interface NearWalletContextValue {
 
 const NearWalletContext = createContext<NearWalletContextValue | null>(null);
 
-interface SelectorBundle {
-  selector: WalletSelector;
-  modal: WalletSelectorModal;
-}
-
-let selectorPromise: Promise<SelectorBundle> | null = null;
+let selectorPromise: Promise<WalletSelector> | null = null;
 
 /**
  * One selector per page — wallet modules keep global listeners. The wallet
@@ -59,59 +52,44 @@ function withIcon<T extends WalletModuleFactory>(factory: T, iconUrl: string): T
   }) as T;
 }
 
-function getSelector(): Promise<SelectorBundle> {
+function getSelector(): Promise<WalletSelector> {
   if (!selectorPromise) {
     selectorPromise = (async () => {
-      const [
-        { setupWalletSelector },
-        { setupModal },
-        { setupHotWallet },
-        { setupMeteorWallet },
-        { setupMyNearWallet },
-        { setupIntearWallet },
-        { setupHereWallet },
-        { setupOKXWallet },
-        { setupSender },
-        { setupNightly },
-        { setupCoin98Wallet },
-        { setupMathWallet },
-        { setupBitgetWallet },
-        { setupWelldoneWallet },
-        { setupXDEFI },
-        { setupNarwallets },
-      ] = await Promise.all([
-        import("@near-wallet-selector/core"),
-        import("@near-wallet-selector/modal-ui"),
-        import("@near-wallet-selector/hot-wallet"),
-        import("@near-wallet-selector/meteor-wallet"),
-        import("@near-wallet-selector/my-near-wallet"),
-        import("@near-wallet-selector/intear-wallet"),
-        import("@near-wallet-selector/here-wallet"),
-        import("@near-wallet-selector/okx-wallet"),
-        import("@near-wallet-selector/sender"),
-        import("@near-wallet-selector/nightly"),
-        import("@near-wallet-selector/coin98-wallet"),
-        import("@near-wallet-selector/math-wallet"),
-        import("@near-wallet-selector/bitget-wallet"),
-        import("@near-wallet-selector/welldone-wallet"),
-        import("@near-wallet-selector/xdefi"),
-        import("@near-wallet-selector/narwallets"),
+      const { setupWalletSelector } = await import("@near-wallet-selector/core");
+      // The app uses WalletPicker, so the unused SDK modal must not block it.
+      // A failed optional adapter should not disable wallets that did load.
+      const loaded = await Promise.allSettled([
+        import("@near-wallet-selector/hot-wallet").then(({ setupHotWallet }) => withIcon(setupHotWallet(), "/wallets/hot.png")),
+        import("@near-wallet-selector/meteor-wallet").then(({ setupMeteorWallet }) => setupMeteorWallet()),
+        import("@near-wallet-selector/my-near-wallet").then(({ setupMyNearWallet }) => setupMyNearWallet()),
+        import("@near-wallet-selector/intear-wallet").then(({ setupIntearWallet }) => setupIntearWallet()),
+        import("@near-wallet-selector/here-wallet").then(({ setupHereWallet }) => setupHereWallet()),
+        import("@near-wallet-selector/okx-wallet").then(({ setupOKXWallet }) => setupOKXWallet()),
+        import("@near-wallet-selector/sender").then(({ setupSender }) => setupSender()),
+        import("@near-wallet-selector/nightly").then(({ setupNightly }) => setupNightly()),
+        import("@near-wallet-selector/coin98-wallet").then(({ setupCoin98Wallet }) => setupCoin98Wallet()),
+        import("@near-wallet-selector/math-wallet").then(({ setupMathWallet }) => setupMathWallet()),
+        import("@near-wallet-selector/bitget-wallet").then(({ setupBitgetWallet }) => setupBitgetWallet()),
+        import("@near-wallet-selector/welldone-wallet").then(({ setupWelldoneWallet }) => setupWelldoneWallet()),
+        import("@near-wallet-selector/xdefi").then(({ setupXDEFI }) => setupXDEFI()),
+        import("@near-wallet-selector/narwallets").then(({ setupNarwallets }) => setupNarwallets()),
+        ...(WALLETCONNECT_PROJECT_ID ? [import("@near-wallet-selector/wallet-connect").then(({ setupWalletConnect }) => setupWalletConnect({
+          projectId: WALLETCONNECT_PROJECT_ID,
+          metadata: {
+            name: "nearpool",
+            description: "Add liquidity to any NEAR token",
+            url: window.location.origin,
+            icons: [`${window.location.origin}/logo-mark-512.png`],
+          },
+        }))] : []),
       ]);
-      // Covers desktop (extensions + web wallets) and mobile (web wallets that
-      // work in any mobile browser, Telegram/app wallets via deep link, and
-      // in-app browsers). WalletConnect is added when a project ID is set.
-      const walletConnect = WALLETCONNECT_PROJECT_ID
-        ? (await import("@near-wallet-selector/wallet-connect")).setupWalletConnect({
-            projectId: WALLETCONNECT_PROJECT_ID,
-            metadata: {
-              name: "nearpool",
-              description: "Add liquidity to any NEAR token",
-              url: window.location.origin,
-              icons: [`${window.location.origin}/logo-mark-512.png`],
-            },
-          })
-        : null;
-      const selector = await setupWalletSelector({
+      const modules: WalletModuleFactory[] = [];
+      for (const result of loaded) {
+        if (result.status === "fulfilled") modules.push(result.value);
+        else console.warn("wallet adapter could not load", result.reason);
+      }
+      if (!modules.length) throw new Error("Wallets could not load. Please retry the connection.");
+      return setupWalletSelector({
         network: {
           networkId: NETWORK_ID,
           nodeUrl: NODE_URL,
@@ -120,29 +98,8 @@ function getSelector(): Promise<SelectorBundle> {
           indexerUrl: "https://api.kitwallet.app",
         },
         fallbackRpcUrls: FALLBACK_RPC_URLS,
-        modules: [
-          withIcon(setupHotWallet(), "/wallets/hot.png"),
-          setupMeteorWallet(),
-          setupMyNearWallet(),
-          setupIntearWallet(),
-          setupHereWallet(),
-          setupOKXWallet(),
-          setupSender(),
-          setupNightly(),
-          setupCoin98Wallet(),
-          setupMathWallet(),
-          setupBitgetWallet(),
-          setupWelldoneWallet(),
-          setupXDEFI(),
-          setupNarwallets(),
-          ...(walletConnect ? [walletConnect] : []),
-        ],
+        modules,
       });
-      const modal = setupModal(selector, {
-        theme: "auto",
-        description: "Connect a NEAR wallet to inject liquidity on Ref Finance.",
-      });
-      return { selector, modal };
     })();
     selectorPromise.catch(() => {
       selectorPromise = null;
@@ -153,7 +110,6 @@ function getSelector(): Promise<SelectorBundle> {
 
 export function NearWalletProvider({ children }: { children: ReactNode }) {
   const [selector, setSelector] = useState<WalletSelector | null>(null);
-  const [modal, setModal] = useState<WalletSelectorModal | null>(null);
   const [accounts, setAccounts] = useState<AccountState[]>([]);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -165,11 +121,10 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
     let alive = true;
     let unsubscribe: (() => void) | undefined;
     getSelector()
-      .then(({ selector: instance, modal: walletModal }) => {
+      .then((instance) => {
         if (!alive) return;
         const initial = instance.store.getState();
         setSelector(instance);
-        setModal(walletModal);
         setAccounts(initial.accounts);
         setSelectedWalletId(initial.selectedWalletId);
         const subscription = instance.store.observable.subscribe((state) => {
@@ -191,8 +146,8 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Signed in or out in another browser tab: wallet-selector and its modal are
-  // page-wide singletons that read the session only at startup, so this tab
+  // Signed in or out in another browser tab: wallet-selector is a
+  // page-wide singleton that reads the session only at startup, so this tab
   // reloads itself to pick up the change (right away if it's in the
   // background, where nobody sees it).
   useEffect(() => {
@@ -248,7 +203,10 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(() => {
     if (selector) setPickerOpen(true);
-  }, [selector]);
+    // Failed module imports are cached by the browser's module loader; a fresh
+    // document lets a repaired deployment or network connection try them again.
+    else if (status === "error") window.location.reload();
+  }, [selector, status]);
 
   const closePicker = useCallback(() => setPickerOpen(false), []);
 
@@ -279,8 +237,8 @@ export function NearWalletProvider({ children }: { children: ReactNode }) {
   const viewMethod = useCallback(<T,>(contractId: string, methodName: string, args: ViewArgs = {}) => rpcViewMethod<T>(contractId, methodName, args), []);
 
   const value = useMemo<NearWalletContextValue>(
-    () => ({ selector, modal, accounts, accountId, wallet, status, error, signIn, signOut, viewMethod, signAndSendTransactions }),
-    [selector, modal, accounts, accountId, wallet, status, error, signIn, signOut, viewMethod, signAndSendTransactions],
+    () => ({ selector, accounts, accountId, wallet, status, error, signIn, signOut, viewMethod, signAndSendTransactions }),
+    [selector, accounts, accountId, wallet, status, error, signIn, signOut, viewMethod, signAndSendTransactions],
   );
 
   return (

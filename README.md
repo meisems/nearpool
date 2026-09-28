@@ -49,7 +49,7 @@ Ref Finance's own pool fees apply separately. Change the amount with `VITE_FEE_N
 ## Stack
 
 - React 18 + Vite + Tailwind v4 + Framer Motion
-- `@near-wallet-selector` with `modal-ui`: HOT, Meteor, MyNearWallet, Intear, HERE, OKX, Sender,
+- `@near-wallet-selector` with the app's wallet picker: HOT, Meteor, MyNearWallet, Intear, HERE, OKX, Sender,
   Nightly (+ WalletConnect when a project ID is set). Web and app wallets work on mobile browsers;
   extension wallets (Sender, OKX) show on desktop only.
 - `near-api-js` failover RPC provider for reads
@@ -79,6 +79,7 @@ npm install
 npm run dev        # http://localhost:3000
 npm test           # math + transaction-planner checks
 npm run test:activity # verified additions/locks + D1/Turso migration checks (Node 22+)
+npm run test:runtime  # wallet loading, chunk recovery, asset caching and RPC fallback
 npm run typecheck
 npm run build && npm start   # production server on :10000 (serves dist/ + /api/activity)
 ```
@@ -98,7 +99,7 @@ For Cloudflare builds the `VITE_*` values are set in `wrangler.toml` `[vars]` (r
 | --- | --- |
 | `VITE_NEAR_RPC_URL` | `https://rpc.mainnet.near.org`. Use `/api/rpc` with a keyed provider (see DEPLOY_CLOUDFLARE.md) |
 | `VITE_POOL_RPC_URL` | unset (same as above). `/api/rpc` sends Ref pool and swap reads through the keyed proxy |
-| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://near.lava.build,https://rpc.mainnet.fastnear.com` |
+| `VITE_NEAR_FALLBACK_RPC_URLS` | `https://free.rpc.fastnear.com,https://rpc.mainnet.fastnear.com` |
 | `VITE_REF_CONTRACT_ID` | `v2.ref-finance.near` |
 | `VITE_WRAP_NEAR_CONTRACT_ID` | `wrap.near` |
 | `VITE_FEE_RECEIVER` | `nearpoolpf.near` (interface fee recipient) |
