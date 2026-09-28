@@ -2,7 +2,8 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNearWallet } from "../context/NearWalletContext";
 import { NearTransactionError, outcomeTxHash } from "../lib/near";
-import { explainNearError, getPlatformFee, getPool, loadAccountSnapshot, planSwap, type RefPool, type SwapPlan } from "../lib/refFinance";
+import { explainNearError, getPlatformFee, getPool, loadAccountSnapshot, PlanError, planDclSwap, planSwap, type RefPool, type SwapPlan } from "../lib/refFinance";
+import { dclQuote } from "../lib/dcl";
 import { executePlannedTransactions } from "./useNearInjection";
 import { REF_QUERY_ROOT } from "./useRefData";
 
@@ -15,6 +16,8 @@ export interface SwapRequest {
   amountIn: bigint;
   slippageBps: number;
   payWithNative: boolean;
+  /** Swap through this Rhea DCL pool instead of Ref routes (`pools` ignored). */
+  dcl?: { poolId: string; fee: number };
 }
 
 export interface SwapReceipt {
@@ -45,12 +48,34 @@ export function useRefSwap() {
         const tokenIn = request.path[0];
         const tokenOut = request.path[request.path.length - 1];
         // Re-read every hop so the quote and min_amount_out use current reserves.
-        const [pools, snapshot, fee] = await Promise.all([
-          Promise.all(request.pools.map((p) => getPool(p.id))),
-          loadAccountSnapshot(accountId, [tokenIn, tokenOut]),
-          getPlatformFee(),
-        ]);
-        const nextPlan = planSwap(snapshot, { ...request, pools, fee });
+        let nextPlan: SwapPlan;
+        if (request.dcl) {
+          // Re-quote now so min_output_amount reflects the current pool state.
+          const [expectedOut, snapshot, fee] = await Promise.all([
+            dclQuote(request.dcl.poolId, tokenIn, tokenOut, request.amountIn),
+            loadAccountSnapshot(accountId, [tokenIn, tokenOut]),
+            getPlatformFee(),
+          ]);
+          if (expectedOut <= 0n) throw new PlanError("no-liquidity", "the pool can't fill this trade");
+          nextPlan = planDclSwap(snapshot, {
+            tokenIn,
+            tokenOut,
+            poolId: request.dcl.poolId,
+            poolFee: request.dcl.fee,
+            amountIn: request.amountIn,
+            expectedOut,
+            slippageBps: request.slippageBps,
+            payWithNative: request.payWithNative,
+            fee,
+          });
+        } else {
+          const [pools, snapshot, fee] = await Promise.all([
+            Promise.all(request.pools.map((p) => getPool(p.id))),
+            loadAccountSnapshot(accountId, [tokenIn, tokenOut]),
+            getPlatformFee(),
+          ]);
+          nextPlan = planSwap(snapshot, { ...request, pools, fee });
+        }
         setPlan(nextPlan);
         setPhase("signing");
         const outcomes = await executePlannedTransactions(signAndSendTransactions, accountId, nextPlan.transactions);

@@ -49,6 +49,13 @@ export const POOL_RPC_URL: string = env.VITE_POOL_RPC_URL ? resolveRpcUrl(String
 export const POOL_RPC_URLS: string[] = [POOL_RPC_URL, ...RPC_URLS.filter((url) => url !== POOL_RPC_URL)];
 
 export const REF_FINANCE_CONTRACT_ID: string = env.VITE_REF_CONTRACT_ID || "v2.ref-finance.near";
+/**
+ * Rhea (Ref) concentrated-liquidity contract. Launchpads such as NearPaid
+ * list coins here only, so NEAR-only deposits and swaps can buy through it.
+ */
+export const DCL_CONTRACT_ID: string = env.VITE_DCL_CONTRACT_ID || "dclv2.ref-labs.near";
+/** DCL fee tiers (hundredths of a basis point: 10000 = 1%). */
+export const DCL_FEE_TIERS = [100, 400, 2000, 10000] as const;
 export const WRAP_NEAR_CONTRACT_ID: string = env.VITE_WRAP_NEAR_CONTRACT_ID || "wrap.near";
 export const EXPLORER_URL: string = (env.VITE_EXPLORER_URL || "https://nearblocks.io").replace(/\/+$/, "");
 
@@ -87,6 +94,8 @@ export const GAS = {
   SWAP_MULTI_HOP: 280n * TGAS,
   /** Ref `swap` on the user's internal deposits (no cross-contract calls; up to two hops). */
   REF_SWAP: 50n * TGAS,
+  /** `ft_transfer_call` into the Rhea DCL contract carrying a `Swap` (Ref SDK: 180 TGas). */
+  DCL_SWAP: 180n * TGAS,
 } as const;
 
 /** Hard protocol limit for a single transaction's prepaid gas. */

@@ -18,7 +18,10 @@ No pool yet? Create one from the token page (Ref `add_simple_pool`), then add th
 which sets the price. **NEAR only** mode adds liquidity without holding the token: the NEAR is
 wrapped and deposited into Ref, part of it buys the other side with Ref `swap` on the deposit (best
 route, which may be the target pool itself), and `add_liquidity` runs in the same transaction as the
-swaps, so a swap that misses its minimum adds nothing. The token must already trade on Ref. Tokens can be tracked (saved per browser): price, change since tracking,
+swaps, so a swap that misses its minimum adds nothing. Tokens that only trade on a Rhea
+concentrated-liquidity pool (`dclv2.ref-labs.near`, e.g. NearPaid launches) are bought there instead:
+wrap → DCL `Swap` → deposit both into Ref → `add_liquidity`. The Swap page also routes through Rhea
+DCL pools when they pay more than Ref. Tokens can be tracked (saved per browser): price, change since tracking,
 pool depth and your position. Swaps route directly or through one intermediate token (e.g.
 NEAR → USDC → token) using Ref's multi-step instant swap.
 

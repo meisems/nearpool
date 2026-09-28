@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNearWallet } from "../context/NearWalletContext";
 import { getNativeBalance } from "../lib/near";
+import { findDclPools, type DclPool } from "../lib/dcl";
 import {
   findPoolsForPair,
   findPoolsForToken,
@@ -101,6 +102,17 @@ export function usePlatformFee() {
     queryKey: [REF_QUERY_ROOT, "platform-fee"],
     queryFn: getPlatformFee,
     staleTime: Infinity,
+    retry: 1,
+  });
+}
+
+/** Rhea DCL pools between two tokens (where launchpad coins such as NearPaid's trade). */
+export function useDclPools(a: string | null, b: string | null) {
+  return useQuery<DclPool[]>({
+    queryKey: [REF_QUERY_ROOT, "dcl-pools", a, b],
+    queryFn: () => findDclPools(a as string, b as string),
+    enabled: !!a && !!b && a !== b,
+    staleTime: 60_000,
     retry: 1,
   });
 }
